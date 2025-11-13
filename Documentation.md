@@ -1,7 +1,6 @@
 # Project Milestones (Stockadoodle IMS API) 
 
 ## Members
-<br/> 
 1. [Gerfel Jay Jimenez](https://github.com/stultumJay)
 2.
 3.
