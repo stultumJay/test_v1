@@ -2,7 +2,7 @@
 
 ## Members
 1. [Gerfel Jay Jimenez](https://github.com/stultumJay)
-2.
+2. [Kent Xylle Ryz J. Romarate](https://github.com/Romarate18)
 3.
 4.
 
