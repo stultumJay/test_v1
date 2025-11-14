@@ -4,11 +4,11 @@
 1. [Gerfel Jay Jimenez](https://github.com/stultumJay)
 2. [Kent Xylle Ryz J. Romarate](https://github.com/Romarate18)
 3. [Noel Jose C. Villalveto](https://github.com/thirdyady)
-4.
+4. [Ivan Risan Llenares](https://github.com/20230027589-cyber)
 
-## 🧩 System Overview
+## System Overview
 
-### 🔹 Basic Operations
+### Basic Operations
 - **Retailers**:  
   Use the POS module to record sales. Product stocks update automatically after each transaction. Includes gamification (daily quota & streaks).
 
@@ -20,7 +20,7 @@
 
 ---
 
-## 🧾 Information Needs (Reports)
+## Information Needs (Reports)
 
 The system generates the following reports:
 1. **Sales Performance Report**
@@ -33,7 +33,7 @@ The system generates the following reports:
 
 ---
 
-## 🚀 Project Milestones
+## Project Milestones
 
 ### **Milestone 1 (Nov Week 1): Project Setup & API Design**
 **What we'll do:**  
