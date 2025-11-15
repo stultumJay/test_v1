@@ -1,12 +1,13 @@
 <div align="center">
-    <img src="desktop_app\assets\stockadoodle-transparent.png" alt="Stockadoodle Logo" width="150">
+    <img src="desktop_app\assets\icons\stockadoodle-transparent.png" alt="Stockadoodle Logo" width="150">
+    
     <h1> Stockadoodle - Inventory Management System </h1>
 </div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9+-blue.svg" alt="Python Version"/>
   <img src="https://img.shields.io/badge/PyQt6-Framework-green.svg" alt="PyQt6"/>
-  <img src="https://img.shields.io/badge/SQLite-4169E1?logo=sqlite&logoColor=fff style=plastic" alt="SQLite"/>
+  <img src="https://img.shields.io/badge/SQLite-4169E1?logo=sqlite&logoColor=fff&style=plastic" alt="SQLite"/>
   <img src="https://img.shields.io/badge/status-maintained-brightgreen.svg" alt="Status"/>
 </p>
 
@@ -50,4 +51,4 @@ A brief overview of the project's directory structure:
     * `utils/`: Shared client utilities
         * `config/`: App level configuration (e.g., API base URL, colors, fonts)
         * `decorators.py/`: For local UI permission checks
-        * `style_utils.py For UI styling
+        * `style_utils.py/`: For UI styling
