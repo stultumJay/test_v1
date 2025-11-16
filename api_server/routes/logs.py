@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from models.product_log import ProductLog
 from models.product import Product
-from models.api_activity_log import APIActivityLog
+from core.activity_logger import ActivityLogger  
 from app import db
 
 bp = Blueprint('logs', __name__)
@@ -52,41 +52,39 @@ def dispose_product():
         return jsonify({"error": str(e)}), 500
 
 
-@bp.route('/desktop', methods=['POST'])
-def log_desktop_action():
-    """
-    POST /api/v1/log/desktop - Log desktop application activity
-    Receives activity logs from desktop app for centralized audit
-    """
-    data = request.get_json() or {}
-    
-    # Extract fields
-    user_id = data.get('user_id')
-    action_type = data.get('action_type')
-    target_entity = data.get('target_entity')
-    
-    if not action_type:
-        return jsonify({"error": "action_type required"}), 400
-    
-    try:
-        # Create activity log entry
-        log = APIActivityLog(
-            method='DESKTOP',  # Special method for desktop actions
-            path='/desktop/action',
-            json_payload=str(data),
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent'),
-            status_code=200,
-            target_entity=target_entity,
-            source='Desktop App',
-            user_id=user_id
-        )
-        
-        db.session.add(log)
-        db.session.commit()
-        
-        return jsonify({"message": "Desktop action logged", "log_id": log.id}), 201
-        
-    except Exception as e:
-        db.session.rollback()
+@bp.route('/desktop', methods=['POST'])  
+def log_desktop_action():  
+    """  
+    POST /api/v1/log/desktop  
+    Endpoint for desktop app to log user actions  
+    """  
+    data = request.get_json() or {}  
+      
+    user_id = data.get('user_id')  
+    action = data.get('action')  
+    target = data.get('target')  
+    details = data.get('details')  
+      
+    if not action:  
+        return jsonify({"error": "Action is required"}), 400  
+      
+    try:  
+        log = ActivityLogger.log_user_action(  
+            user_id=user_id,  
+            action=action,  
+            target=target or "N/A",  
+            details=details,  
+            source="Desktop App"  
+        )  
+        db.session.commit()  
+          
+        return jsonify({  
+            "message": "Desktop action logged",  
+            "log_id": log.id  
+        }), 201  
+          
+    except Exception as e:  
+        db.session.rollback()  
         return jsonify({"error": str(e)}), 500
+
+    

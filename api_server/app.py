@@ -9,6 +9,7 @@ import os
 from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from middleware.activity_logger import init_activity_logging  
 from dotenv import load_dotenv
 
 # Load environment variables

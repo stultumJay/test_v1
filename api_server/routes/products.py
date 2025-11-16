@@ -134,17 +134,22 @@ def update_product(product_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/<int:product_id>', methods=['DELETE'])
-def delete_product(product_id):
-    """DELETE /api/v1/products/<id>"""
-    p = Product.query.get(product_id)
-    if not p:
-        return jsonify({"error": "Product not found"}), 404
-    
-    try:
-        db.session.delete(p)
-        db.session.commit()
-        return jsonify({"message": "Product deleted"}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+@bp.route('/<int:product_id>', methods=['DELETE'])  
+def delete_product(product_id):  
+    product = Product.query.get(product_id)  
+    if not product:  
+        return jsonify({"error": "Product not found"}), 404  
+      
+    # Log the deletion  
+    ActivityLogger.log_product_action(  
+        product_id=product_id,  
+        user_id=None,  # No user in open API  
+        action_type="DELETE",  
+        notes=f"Product '{product.name}' deleted via API",  
+        source="API"  
+    )  
+      
+    db.session.delete(product)  
+    db.session.commit()  
+      
+    return jsonify({"message": "Product deleted"}), 200

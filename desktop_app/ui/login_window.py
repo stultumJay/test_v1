@@ -1,258 +1,195 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QLineEdit, QPushButton, QMessageBox, QWidget)
-from PyQt6.QtGui import QPixmap, QFont
-from PyQt6.QtCore import Qt
-import os
-from core.database_manager import DatabaseManager
-from core.activity_logger import ActivityLogger
-from ui.mfa_window import MFADialog
-from utils.helpers import get_feather_icon  # Use this consistently
-from utils.config import AppConfig
-from utils.styles import get_dialog_style  # Import styles
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
+    QPushButton, QCheckBox, QFrame, QMessageBox, QApplication
+)
+from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtCore import Qt, QSize, QTimer
 
-class LoginWindow(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.db_manager = DatabaseManager()
-        self.logged_in_user = None
-        self.activity_logger = ActivityLogger()  # Initialize logger
+from ui.mfa_window import MFAWindow
+from ui.main_window import MainWindow
+from api_client.stockadoodle_api import API
+from utils.config import AppConfig, SESSION
+from utils.styles import get_global_stylesheet, show_error_message
+from utils.helpers import get_feather_icon
 
-        self.setWindowTitle("Login - Inventory Management System")
-        self.setFixedSize(400, 350)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        # Remove transparent background
-        # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+class LoginWindow(QMainWindow):
+    """
+    The main login window for StockaDoodle. Handles API authentication 
+    and session management.
+    """
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("StockaDoodle - Login")
+        self.setGeometry(100, 100, 450, 600)
+        self.setFixedSize(450, 600) # Fixed size for a modern login screen
+        
+        self.setStyleSheet(get_global_stylesheet())
+        
+        self.main_window = None
+        self.mfa_window = None
+        
+        self.setup_ui()
+        self.check_saved_session()
+        self.load_remembered_user()
 
-        # Apply custom login window style with solid background
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {AppConfig.BACKGROUND_COLOR};
-                border: 1px solid {AppConfig.PRIMARY_COLOR};
-                border-radius: 10px;
-                color: {AppConfig.TEXT_COLOR};
-                font-family: {AppConfig.FONT_FAMILY};
-            }}
-            QLabel {{
-                color: {AppConfig.TEXT_COLOR};
-            }}
-            QLineEdit {{
-                background-color: {AppConfig.INPUT_BACKGROUND};
-                border: 1px solid {AppConfig.BORDER_COLOR};
-                border-radius: 5px;
-                padding: 6px;
-                color: {AppConfig.TEXT_COLOR};
-                font-size: {AppConfig.FONT_SIZE_NORMAL}pt;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {AppConfig.PRIMARY_COLOR};
-            }}
-            QPushButton {{
-                background-color: {AppConfig.PRIMARY_COLOR};
-                color: {AppConfig.LIGHT_TEXT};
-                border: none;
-                border-radius: 5px;
-                padding: 8px 15px;
-                font-size: {AppConfig.FONT_SIZE_NORMAL}pt;
-            }}
-            QPushButton:hover {{
-                background-color: {AppConfig.SECONDARY_COLOR};
+    def setup_ui(self):
+        """Builds the central login card and layout."""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # --- Login Card ---
+        login_card = QFrame(self)
+        login_card.setObjectName("Card")
+        login_card.setStyleSheet(get_global_stylesheet() + f"""
+            QFrame#Card {{
+                background-color: {AppConfig.CARD_BACKGROUND};
+                min-width: 350px;
+                padding: 30px;
+                border-radius: {AppConfig.BORDER_RADIUS};
             }}
         """)
         
-        self.init_ui()
-
-    def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(30, 30, 30, 30)
-        main_layout.setSpacing(15)
-
-        # Close button (top right)
-        close_btn_layout = QHBoxLayout()
-        close_btn_layout.addStretch()
-        self.close_button = QPushButton()
-        self.close_button.setObjectName("closeButton")
-        self.close_button.setIcon(get_feather_icon("x-circle", size=20))
-        self.close_button.setFixedSize(30, 30)
-        self.close_button.setStyleSheet("QPushButton#closeButton { background-color: transparent; border: none; } QPushButton#closeButton:hover { background-color: rgba(255,255,255,0.1); }")
-        self.close_button.clicked.connect(self.reject) # Close dialog on click
-        close_btn_layout.addWidget(self.close_button)
-        main_layout.addLayout(close_btn_layout)
-
-        # Logo/Title
-        logo_label = QLabel()
-        logo_path = os.path.join("assets", "images", "logo.png")
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            logo_label.setPixmap(pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        else:
-            logo_label.setText("IMS")
-            logo_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_XXLARGE, QFont.Weight.Bold))
-            logo_label.setStyleSheet(f"color: {AppConfig.LIGHT_TEXT};")
-        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(logo_label)
-
-        title_label = QLabel("Inventory Management System")
-        title_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_LARGE, QFont.Weight.Bold))
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet(f"color: {AppConfig.TEXT_COLOR_ALT};")
-        main_layout.addWidget(title_label)
-
-        # Username Input
-        username_layout = QHBoxLayout()
-        username_icon = QLabel()
-        username_icon.setPixmap(get_feather_icon("user", size=20).pixmap(20, 20))
-        username_layout.addWidget(username_icon)
+        card_layout = QVBoxLayout(login_card)
+        card_layout.setSpacing(20)
         
+        # Logo/Title
+        title_label = QLabel("StockaDoodle")
+        title_label.setObjectName("Title")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(title_label)
+        
+        subtitle_label = QLabel("Inventory Management System")
+        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle_label.setStyleSheet(f"color: {AppConfig.TEXT_MUTED};")
+        card_layout.addWidget(subtitle_label)
+        
+        # Username Input
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Username")
         self.username_input.setClearButtonEnabled(True)
-        username_layout.addWidget(self.username_input)
-        main_layout.addLayout(username_layout)
+        self.username_input.setStyleSheet("padding-left: 30px;")
+        self.username_input.setTextMargins(30, 0, 0, 0) # Add left margin for icon
+        self.username_input.setText("admin") # Pre-fill for testing
+        card_layout.addWidget(self.username_input)
 
         # Password Input
-        password_layout = QHBoxLayout()
-        password_icon = QLabel()
-        password_icon.setPixmap(get_feather_icon("lock", size=20).pixmap(20, 20))
-        password_layout.addWidget(password_icon)
-        
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Password")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_input.setClearButtonEnabled(True)
-        self.password_input.returnPressed.connect(self.handle_login) # Trigger login on Enter
-        password_layout.addWidget(self.password_input)
-        main_layout.addLayout(password_layout)
+        self.password_input.setStyleSheet("padding-left: 30px;")
+        self.password_input.setTextMargins(30, 0, 0, 0) # Add left margin for icon
+        self.password_input.setText("admin") # Pre-fill for testing
+        card_layout.addWidget(self.password_input)
         
-        # Now connect username input's returnPressed after password_input is defined
-        self.username_input.returnPressed.connect(self.password_input.setFocus) # Move focus to password
+        # Add icons to inputs
+        self._add_input_icon(self.username_input, get_feather_icon("user", AppConfig.TEXT_MUTED, 18))
+        self._add_input_icon(self.password_input, get_feather_icon("lock", AppConfig.TEXT_MUTED, 18))
 
+        # Remember Me and Forgot Password (Placeholder)
+        remember_layout = QHBoxLayout()
+        self.remember_me_check = QCheckBox("Remember Me")
+        self.remember_me_check.setStyleSheet(f"color: {AppConfig.TEXT_MUTED};")
+        remember_layout.addWidget(self.remember_me_check)
+        remember_layout.addStretch(1)
+        
+        forgot_pass = QLabel("Forgot Password?")
+        forgot_pass.setStyleSheet(f"color: {AppConfig.PRIMARY_COLOR}; cursor: pointer;")
+        remember_layout.addWidget(forgot_pass) # Placeholder functionality
+        card_layout.addLayout(remember_layout)
+        
         # Login Button
-        login_button = QPushButton("Login")
-        login_button.setIcon(get_feather_icon("log-in", size=16))
-        login_button.clicked.connect(self.handle_login)
-        main_layout.addWidget(login_button)
+        self.login_button = QPushButton("LOG IN")
+        self.login_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.login_button.clicked.connect(self.authenticate)
+        card_layout.addWidget(self.login_button)
+        
+        main_layout.addWidget(login_card)
 
-        main_layout.addStretch() # Push content to top
+    def _add_input_icon(self, line_edit: QLineEdit, icon: QIcon):
+        """Sets an icon inside a QLineEdit for a nicer look."""
+        action = line_edit.addAction(icon, QLineEdit.ActionPosition.LeadingPosition)
+        action.setVisible(True)
 
-    def handle_login(self):
-        username = self.username_input.text()
+    def load_remembered_user(self):
+        """Loads username and 'remember me' state from config."""
+        config = AppConfig.load_config()
+        if config['remember_me']:
+            self.remember_me_check.setChecked(True)
+            self.username_input.setText(config['last_username'])
+            self.password_input.setFocus() # Focus password field
+
+    def check_saved_session(self):
+        """Checks for an active session on startup."""
+        if SESSION.is_logged_in():
+            QTimer.singleShot(100, self.open_main_window) # Delay slightly to allow UI to draw
+
+    def authenticate(self):
+        """
+        Handles the login process, replacing DatabaseManager with API client.
+        """
+        username = self.username_input.text().strip()
         password = self.password_input.text()
         
         if not username or not password:
-            QMessageBox.warning(self, "Login Error", "Please enter both username and password.")
+            show_error_message("Login Failed", "Please enter both username and password.", self)
             return
+
+        self.login_button.setText("Logging In...")
+        self.login_button.setEnabled(False)
         
-        # Authenticate with the database manager
-        user = self.db_manager.authenticate_user(username, password)
+        # --- API Integration Point 1: auth_login ---
+        resp = API.users.auth_login(username, password)
         
-        if user:
-            # Check if MFA is required
-            if user['role'] in ['admin', 'manager']:
-                # Use MFA dialog to verify the second factor
-                email = user.get('email')
-                if email:
-                    try:
-                        from core.user_manager import UserManager
-                        user_manager = UserManager()
-                        
-                        # Initiate MFA
-                        if user_manager.initiate_mfa(user):
-                            # Show MFA dialog
-                            mfa_dialog = MFADialog(username=username, email=email, parent=self)
-                            if mfa_dialog.exec() == QDialog.DialogCode.Accepted:
-                                # MFA was successful, proceed with login
-                                self.logged_in_user = user
-                                
-                                # Log the successful login with MFA note
-                                self.activity_logger.log_activity(
-                                    user_info=user,
-                                    action="Logged In",
-                                    target="Admin/Manager Login",
-                                    details={"auth_method": "password + MFA"}
-                                )
-                                
-                                self.login_successful()
-                            else:
-                                QMessageBox.warning(self, "MFA Cancelled", "Login cancelled during verification.")
-                                self.password_input.clear()  # Clear password for security
-                        else:
-                            # If MFA initiation failed, still allow login for testing
-                            QMessageBox.warning(self, "MFA Warning", 
-                                            "MFA code could not be sent. Proceeding with login for testing purposes.")
-                            self.logged_in_user = user
-                            self.login_successful()
-                    except Exception as e:
-                        # If MFA has any errors, allow login for testing
-                        print(f"MFA error: {str(e)}")
-                        QMessageBox.warning(self, "MFA Error", 
-                                        f"MFA verification error: {str(e)}. Proceeding with login for testing.")
-                        self.logged_in_user = user
-                        self.login_successful()
-                else:
-                    # If email is missing, still allow login
-                    QMessageBox.warning(self, "MFA Warning", 
-                                     "Email not found for MFA verification. Proceeding with login for testing.")
-                    self.logged_in_user = user
-                    self.login_successful()
+        self.login_button.setText("LOG IN")
+        self.login_button.setEnabled(True)
+        
+        if resp.success:
+            user_data = resp.data['user']
+            token = resp.data['token']
+            
+            # Save remember me state
+            AppConfig.save_config(self.remember_me_check.isChecked(), username if self.remember_me_check.isChecked() else "")
+
+            # Check for MFA requirement
+            if user_data['role'] in ['Admin', 'Manager']:
+                self.open_mfa_window(user_data, token)
             else:
-                # No MFA required for retailers, proceed with login
-                self.logged_in_user = user
-                
-                # Log the successful login
-                self.activity_logger.log_activity(
-                    user_info=user,
-                    action="Logged In",
-                    details={"auth_method": "password"}
-                )
-                
-                self.login_successful()
+                # Retailers log in directly
+                SESSION.login(user_data, token)
+                self.open_main_window()
         else:
-            QMessageBox.warning(self, "Login Failed", "Invalid username or password.")
+            show_error_message("Login Failed", resp.error or "An unknown login error occurred.", self)
 
-    def login_successful(self):
-        """Handle successful login by creating and showing the main window"""
-        try:
-            from ui.main_window import MainWindow
-            print(f"User logged in: {self.logged_in_user['username']} as {self.logged_in_user['role']}")
-            
-            # Log the successful login
-            self.activity_logger.log_activity(
-                user_info=self.logged_in_user,
-                action="Logged In",
-                target="System",
-                details={"ip_address": "127.0.0.1"}  # Could be expanded to capture real IP
-            )
-            
-            # Create and show main window
-            self.main_window = MainWindow(self.logged_in_user)
-            self.main_window.show()
-            
-            # Hide login window (don't close it yet)
-            self.hide()
-            
-        except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"Error creating main window: {e}")
-            print(error_details)
-            QMessageBox.critical(self, "Application Error", 
-                               f"An unexpected error occurred: {e}\n\nDetails:\n{error_details}")
+    def open_mfa_window(self, user_data: Dict[str, Any], token: str):
+        """Opens the MFA window for Admin/Manager roles."""
+        self.hide()
+        self.mfa_window = MFAWindow(user_data, token, self)
+        self.mfa_window.show()
 
-    def mousePressEvent(self, event):
-        # Allow dragging the window when title bar is removed
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.old_pos = event.globalPosition().toPoint()
+    def open_main_window(self):
+        """Opens the main application window."""
+        self.hide()
+        # Pass the API client directly to MainWindow
+        self.main_window = MainWindow(api_client=API)
+        self.main_window.show()
 
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.old_pos = None
+    def handle_mfa_success(self):
+        """Called by MFAWindow upon successful verification."""
+        self.open_main_window()
+        if self.mfa_window:
+            self.mfa_window.close()
+            self.mfa_window = None
 
-    def mouseMoveEvent(self, event):
-        if not self.old_pos:
-            return
-        delta = event.globalPosition().toPoint() - self.old_pos
-        self.move(self.pos() + delta)
-        self.old_pos = event.globalPosition().toPoint()
-
-    def get_logged_in_user(self):
-        return self.logged_in_user
+    def handle_logout(self):
+        """Handles session cleanup and returns to login screen."""
+        SESSION.logout()
+        if self.main_window:
+            self.main_window.close()
+            self.main_window = None
+        
+        self.password_input.clear()
+        self.show()
