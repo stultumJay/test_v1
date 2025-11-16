@@ -9,6 +9,7 @@ import json
 import base64
 from functools import wraps
 from typing import Dict, List, Optional, Any, Tuple
+from .enhanced_clients import EnhancedProductClient, RetailerMetricsClient, EnhancedSalesClient  
 
 
 class APIResponse:
@@ -82,6 +83,9 @@ class StockaDoodleAPI:
         self.logs = LogsClient(self)
         self.metrics = MetricsClient(self)
         self.dashboard = DashboardClient(self)
+        self.products_enhanced = EnhancedProductClient(self)  
+        self.retailer_metrics = RetailerMetricsClient(self)  
+        self.sales_enhanced = EnhancedSalesClient(self)
     
     def _url(self, path: str) -> str:
         """Build full URL from path"""
