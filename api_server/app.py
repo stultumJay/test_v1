@@ -50,7 +50,9 @@ def create_app():
     from routes.logs import bp as logs_bp
     from routes.metrics import bp as metrics_bp
     from routes.dashboard import bp as dashboard_bp
+    from routes.auth import bp as auth_bp  # NEW  
     
+    app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')  # NEW  
     app.register_blueprint(users_bp, url_prefix='/api/v1/users')
     app.register_blueprint(categories_bp, url_prefix='/api/v1/categories')
     app.register_blueprint(products_bp, url_prefix='/api/v1/products')

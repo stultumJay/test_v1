@@ -1,9 +1,19 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QTableWidget, QTableWidgetItem, QScrollArea,
-                             QPushButton, QLineEdit, QComboBox, QSizePolicy,
-                             QGridLayout, QFrame, QMessageBox, QDialog, QHeaderView)
-from PyQt6.QtGui import QPixmap, QFont
-from PyQt6.QtCore import Qt, QSize
+"""
+dashboard_widgets.py
+Reusable UI components for StockaDoodle/LogiJex IMS
+Includes: ProductCardWidget, BadgeLabel, shared table styling helpers
+Used across Admin, Manager, and Retailer dashboards
+"""
+
+from PyQt6.QtWidgets import (
+    QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QTableWidget, QTableWidgetItem, QScrollArea,
+    QGridLayout, QMessageBox, QInputDialog, QHeaderView,
+    QSpacerItem, QSizePolicy
+)
+from PyQt6.QtGui import QPixmap, QFont, QIcon
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
+
 import os
 from core.inventory_manager import InventoryManager
 from core.product_manager import ProductManager
@@ -1801,3 +1811,226 @@ class RetailerDashboardWidget(QWidget):
             else:
                 QMessageBox.critical(self, "Checkout Incomplete",
                                      "Some items could not be processed. Please check logs.")
+
+
+
+
+# =============================================================================
+# SHARED: BadgeLabel - Reusable for Role, Status, Stock Level, etc.
+# =============================================================================
+class BadgeLabel(QLabel):
+    """Reusable colored badge for roles, status, stock levels, etc."""
+    def __init__(self, text: str, badge_type: str):
+        super().__init__(text)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedHeight(28)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        # Color mapping (consistent across entire app)
+        styles = {
+            # Roles
+            "Admin": ("#ffebee", "#c62828"),       # Light red / dark red
+            "Manager": ("#e3f2fd", "#1565c0"),     # Light blue / dark blue
+            "Retailer": ("#e8f5e9", "#2e7d32"),    # Light green / dark green
+
+            # Status
+            "Active": ("#e8f5e9", "#2e7d32"),
+            "Suspended": ("#fff8e1", "#f9a825"),
+            "Inactive": ("#ffebee", "#c62828"),
+
+            # Stock Status
+            "In Stock": ("#e8f5e9", "#2e7d32"),
+            "Low Stock": ("#fff3e0", "#ef6c00"),
+            "No Stock": ("#ffebee", "#c62828"),
+        }
+
+        bg, fg = styles.get(badge_type, ("#f5f5f5", "#333333"))
+        self.setStyleSheet(f"""
+            QLabel {{
+                background-color: {bg};
+                color: {fg};
+                border-radius: 14px;
+                padding: 4px 12px;
+                font-weight: bold;
+                font-size: {AppConfig.FONT_SIZE_NORMAL - 1}pt;
+                min-width: 70px;
+            }}
+        """)
+
+
+# =============================================================================
+# ProductCardWidget - Used in Manager Dashboard & Product Management
+# =============================================================================
+class ProductCardWidget(QFrame):
+    """Modern product card with image, details, and role-based actions"""
+    editClicked = pyqtSignal(int)
+    addStockClicked = pyqtSignal(int)
+
+    def __init__(self, product_data: dict, current_user: dict, parent=None):
+        super().__init__(parent)
+        self.product_data = product_data
+        self.current_user = current_user
+        self.product_manager = ProductManager()
+        self.activity_logger = ActivityLogger()
+
+        self.setObjectName("productCard")
+        self.setStyleSheet(get_product_card_style())
+        self.setFixedSize(260, 480)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self.init_ui()
+        self.update_visibility()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        # Image
+        self.image_label = QLabel()
+        self.image_label.setFixedSize(230, 230)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setScaledContents(True)
+        self.image_label.setStyleSheet("""
+            QLabel { border: 2px solid #e0e0e0; border-radius: 12px; background: #fafafa; }
+        """)
+        self.update_image()
+        layout.addWidget(self.image_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # Info Container
+        info = QVBoxLayout()
+        info.setSpacing(6)
+
+        # Name
+        name = QLabel(self.product_data.get("name", "Unknown Product"))
+        name.setProperty("class", "product-title")
+        name.setWordWrap(True)
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_MEDIUM, QFont.Weight.Bold))
+        info.addWidget(name)
+
+        # Brand
+        brand = QLabel(f"Brand: {self.product_data.get('brand', 'N/A')}")
+        brand.setProperty("class", "product-detail")
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info.addWidget(brand)
+
+        # Price
+        price = float(self.product_data.get("price", 0))
+        price_label = QLabel(f"${price:.2f}")
+        price_label.setProperty("class", "product-price")
+        price_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        price_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_LARGE, QFont.Weight.Bold))
+        price_label.setStyleSheet(f"color: {AppConfig.PRIMARY_BLUE};")
+        info.addWidget(price_label)
+
+        # Stock Status Badge
+        stock = self.product_data.get("stock", 0)
+        min_stock = self.product_data.get("min_stock_level", 5)
+        if stock <= 0:
+            status = "No Stock"
+        elif stock <= min_stock:
+            status = "Low Stock"
+        else:
+            status = "In Stock"
+
+        self.stock_badge = BadgeLabel(f"{stock} ({status})", status)
+        info.addWidget(self.stock_badge, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # Category
+        cat = QLabel(f"Category: {self.product_data.get('category', 'Uncategorized')}")
+        cat.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cat.setStyleSheet("color: #666; font-size: 11pt;")
+        info.addWidget(cat)
+
+        layout.addLayout(info)
+
+        # Action Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        self.add_stock_btn = QPushButton("Add Stock")
+        self.add_stock_btn.setIcon(get_feather_icon("plus-square"))
+        self.add_stock_btn.clicked.connect(lambda: self.addStockClicked.emit(self.product_data["id"]))
+
+        self.edit_btn = QPushButton("Edit")
+        self.edit_btn.setIcon(get_feather_icon("edit"))
+        self.edit_btn.clicked.connect(lambda: self.editClicked.emit(self.product_data["id"]))
+
+        btn_layout.addWidget(self.add_stock_btn)
+        btn_layout.addWidget(self.edit_btn)
+        layout.addLayout(btn_layout)
+
+    def update_image(self):
+        path = self.product_data.get("image_path")
+        pixmap = load_product_image(path, target_size=(230, 230), keep_aspect_ratio=True)
+        if pixmap.isNull():
+            pixmap = QPixmap(230, 230)
+            pixmap.fill(Qt.GlobalColor.lightGray)
+        self.image_label.setPixmap(pixmap)
+
+    def update_visibility(self):
+        role = self.current_user.get("role", "").lower()
+        is_retailer = role == "retailer"
+        self.add_stock_btn.setVisible(not is_retailer)
+        self.edit_btn.setVisible(not is_retailer)
+
+    def update_card_data(self, new_data: dict):
+        self.product_data.update(new_data)
+        self.findChild(QLabel, "", Qt.FindChildOption.FindChildrenRecursively)
+        for label in self.findChildren(QLabel):
+            text = label.text()
+            if "Brand:" in text:
+                label.setText(f"Brand: {new_data.get('brand', 'N/A')}")
+            elif label.property("class") == "product-title":
+                label.setText(new_data.get("name", "Unknown"))
+            elif "Category:" in text:
+                label.setText(f"Category: {new_data.get('category', 'Uncategorized')}")
+            elif "$" in text and "price" in label.property("class"):
+                label.setText(f"${float(new_data.get('price', 0)):.2f}")
+
+        self.update_image()
+        stock = new_data.get("stock", 0)
+        min_stock = new_data.get("min_stock_level", 5)
+        status = "No Stock" if stock <= 0 else "Low Stock" if stock <= min_stock else "In Stock"
+        self.stock_badge.setText(f"{stock} ({status})")
+        self.stock_badge.badge_type = status  # For future styling if needed
+        self.update_visibility()
+
+
+# =============================================================================
+# Optional: LowStockTableWidget, ExpiringItemsWidget (for Manager Dashboard)
+# =============================================================================
+class LowStockTableWidget(QTableWidget):
+    def __init__(self, parent=None):
+        super().__init__(0, 5, parent)
+        self.setHorizontalHeaderLabels(["Product", "Brand", "Current Stock", "Min Level", "Status"])
+        apply_table_styles(self)
+        self.horizontalHeader().setStretchLastSection(True)
+        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+
+    def load_data(self, products):
+        self.setRowCount(0)
+        for prod in products:
+            if prod["stock"] > prod.get("min_stock_level", 5):
+                continue
+            row = self.rowCount()
+            self.insertRow(row)
+            self.setItem(row, 0, QTableWidgetItem(prod["name"]))
+            self.setItem(row, 1, QTableWidgetItem(prod.get("brand", "N/A")))
+            self.setItem(row, 2, QTableWidgetItem(str(prod["stock"])))
+            self.setItem(row, 3, QTableWidgetItem(str(prod.get("min_stock_level", 5))))
+            status = BadgeLabel("Low Stock" if prod["stock"] > 0 else "No Stock", "Low Stock" if prod["stock"] > 0 else "No Stock")
+            self.setCellWidget(row, 4, status)
+
+
+# =============================================================================
+# Export for use in other modules
+# =============================================================================
+__all__ = [
+    "BadgeLabel",
+    "ProductCardWidget",
+    "LowStockTableWidget",
+    "apply_table_styles",
+    "get_product_card_style"
+]
