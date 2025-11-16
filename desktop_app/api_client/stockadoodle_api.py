@@ -149,6 +149,20 @@ class StockaDoodleAPI:
     def is_authenticated(self) -> bool:
         """Check if user is logged in"""
         return self.current_user is not None
+    
+    def send_mfa_code(self, username: str, email: str) -> APIResponse:  
+        """Send MFA code to user's email"""  
+        return self._request('POST', 'auth/mfa/send', json_data={  
+            'username': username,  
+            'email': email  
+        })  
+      
+    def verify_mfa_code(self, username: str, code: str) -> APIResponse:  
+        """Verify MFA code"""  
+        return self._request('POST', 'auth/mfa/verify', json_data={  
+            'username': username,  
+            'code': code  
+        })
 
 
 class UserClient:
