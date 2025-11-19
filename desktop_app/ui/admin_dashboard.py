@@ -6,7 +6,9 @@ High-level metrics, user activity, and quick actions
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QFrame, QGridLayout, QHeaderView
+    
 )
+from desktop_app.ui.user_profile import UserProfileTab
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QFont
 from datetime import datetime
@@ -72,6 +74,8 @@ class AdminDashboardWidget(QWidget):
         self.api = api_client
         
         self.setStyleSheet(f"background-color: {AppConfig.BACKGROUND_COLOR};")
+        self.user_data = user_data
+        self.setWindowTitle(f"Stockadoodle - Admin Dashboard ({user_data['username']})")
         self.init_ui()
         
         # Load data asynchronously

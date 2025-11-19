@@ -7,10 +7,9 @@ Uses global UserSession for unified state management
 import requests
 import json
 import base64
-from functools import wraps
-from typing import Dict, List, Optional, Any, Tuple
-from .enhanced_clients import EnhancedProductClient, RetailerMetricsClient, EnhancedSalesClient  
-
+from typing import Dict, List, Optional, Any
+from .base import APIResponse, role_required
+from .enhanced_clients import EnhancedProductClient, RetailerMetricsClient, EnhancedSalesClient
 
 class APIResponse:
     """Standardized API response wrapper"""

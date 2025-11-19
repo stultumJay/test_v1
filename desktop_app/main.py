@@ -129,6 +129,16 @@ class StockaDoodleApp:
         except Exception as e:
             logger.error(f"Failed to initialize API client: {e}")
             return False
+        
+    def enhance(self):
+        """Call this after login to add enhanced clients"""
+        if not hasattr(self, '_enhanced'):
+            from .enhanced_clients import EnhancedProductClient, RetailerMetricsClient, EnhancedSalesClient
+            self.products_enhanced = EnhancedProductClient(self)
+            self.retailer_metrics = RetailerMetricsClient(self)
+            self.sales_enhanced = EnhancedSalesClient(self)
+            self._enhanced = True
+        return self
 
     def initialize_session(self):
         """Initialize session manager"""
@@ -329,6 +339,7 @@ def main():
 
     # Create and run application
     app = StockaDoodleApp()
+    app.enhance()
     sys.exit(app.run())
 
 

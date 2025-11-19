@@ -3,8 +3,7 @@ Enhanced API client modules with advanced filtering and gamification
 """
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta, date
-from api_client.stockadoodle_api import APIResponse, role_required
-
+from .base import APIResponse, role_required
 
 class EnhancedProductClient:
     """
