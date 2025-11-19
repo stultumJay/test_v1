@@ -2,459 +2,504 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QTableWidget, QTableWidgetItem, QPushButton, QLineEdit,
-    QComboBox, QFrame, QSizePolicy, QHeaderView, QToolButton, QSpacerItem
+    QComboBox, QFrame, QSizePolicy, QHeaderView, QToolButton,
+    QGridLayout, QSpacerItem, QScrollArea, QDialog
 )
-from PyQt6.QtGui import QFont, QIcon, QAction
-from PyQt6.QtCore import Qt, QSize, QRect
+from PyQt6.QtGui import QFont, QIcon, QPixmap
+from PyQt6.QtCore import Qt, QSize, QTimer
 
-# --- Minimal Configuration and Utility for Demo ---
-# In a full application, these would be imported from utils/config.py
-class AppConfig:
-    FONT_FAMILY = "Inter"
-    FONT_SIZE_TITLE = 18
-    FONT_SIZE_NORMAL = 10
-    PRIMARY_BLUE = "#3a7afb"
-    SECONDARY_DARK = "#2c3e50"
-    BORDER_GRAY = "#bdc3c7"
-    BACKGROUND_LIGHT = "#f5f7fa"
-    TEXT_DEFAULT = "#34495e"
+from typing import Dict, Any, List
 
-def get_feather_icon(name):
-    # Minimal icon mapping using Unicode characters for demonstration
-    icons = {
-        "download": "⭳", "plus": "+", "search": "🔎",
-        "edit": "✎", "key": "🔑", "trash": "🗑️"
-    }
-    return icons.get(name, "?")
+from api_client.stockadoodle_api import StockaDoodleAPI, MOCK_USERS
+from utils.config import AppConfig, SESSION
+from utils.styles import apply_table_styles, get_dashboard_card_style, show_error_message, show_success_message
+from utils.helpers import get_feather_icon, format_date
 
 # --- Custom Table Cell Widgets ---
 
 class BadgeLabel(QLabel):
     """A custom QLabel for displaying role or status as a colored badge."""
-    def __init__(self, text, badge_type):
+    def __init__(self, text: str, badge_type: str):
         super().__init__(text)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFixedWidth(80) # Fixed width for uniform badges
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-
-        styles = {
-            "Admin": ("#e6e6ff", AppConfig.PRIMARY_BLUE), # Light Lavender background, Primary Blue text
-            "Manager": ("#e0f7fa", "#00bcd4"), # Light Cyan background, Cyan text
-            "Retailer": ("#e8f5e9", "#4caf50"), # Light Green background, Green text
-            "Active": ("#e8f5e9", "#4caf50"), # Light Green background, Green text
-            "Suspended": ("#fff8e1", "#ffc107"), # Light Yellow background, Gold text
-            "Inactive": ("#ffebee", "#f44336"), # Light Red background, Red text
+        self.setFixedSize(80, 24)
+        
+        # Define colors based on type
+        colors = {
+            "Admin": AppConfig.DANGER_COLOR,
+            "Manager": AppConfig.PRIMARY_COLOR,
+            "Retailer": AppConfig.SUCCESS_COLOR,
+            "Active": AppConfig.SUCCESS_COLOR,
+            "Inactive": AppConfig.DANGER_COLOR,
+            "Desktop App": "#64B5F6", # Light Blue
+            "Postman": "#FFB74D", # Amber
         }
         
-        bg_color, text_color = styles.get(badge_type, ("#f0f0f0", AppConfig.TEXT_DEFAULT))
-
+        bg_color = colors.get(badge_type, AppConfig.TEXT_MUTED)
+        
         self.setStyleSheet(f"""
             QLabel {{
                 background-color: {bg_color};
-                color: {text_color};
-                border-radius: 8px;
-                padding: 4px 8px;
+                color: white;
+                border-radius: 12px;
+                padding: 4px;
                 font-weight: bold;
-                font-size: {AppConfig.FONT_SIZE_NORMAL - 1}pt;
+                font-size: 8pt;
             }}
         """)
 
 class NameCellWidget(QWidget):
-    """Custom widget for the 'Name' column (Avatar + Name/Department)."""
-    def __init__(self, initials, name, department, role_color):
+    """A custom widget to display avatar + username in a table cell."""
+    def __init__(self, user_data: Dict[str, Any]):
         super().__init__()
-        self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 5, 0, 5)
-        self.main_layout.setSpacing(10)
-
-        # 1. Avatar Label
-        self.avatar = QLabel(initials)
-        self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.avatar.setFixedSize(QSize(32, 32))
-        self.avatar.setStyleSheet(f"""
-            QLabel {{
-                background-color: {role_color};
-                color: white;
-                border-radius: 16px; /* Makes it circular */
-                font-size: {AppConfig.FONT_SIZE_NORMAL}pt;
-                font-weight: bold;
-            }}
-        """)
-
-        # 2. Text (Name and Department)
-        self.text_container = QWidget()
-        self.text_layout = QVBoxLayout(self.text_container)
-        self.text_layout.setContentsMargins(0, 0, 0, 0)
-        self.text_layout.setSpacing(0)
-
-        self.name_label = QLabel(name)
-        self.name_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL + 1, QFont.Weight.Bold))
-        self.name_label.setStyleSheet(f"color: {AppConfig.TEXT_DEFAULT};")
-
-        self.dept_label = QLabel(department)
-        self.dept_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL - 1))
-        self.dept_label.setStyleSheet("color: #7f8c8d;") # Gray color for department
-
-        self.text_layout.addWidget(self.name_label)
-        self.text_layout.addWidget(self.dept_label)
-
-        self.main_layout.addWidget(self.avatar)
-        self.main_layout.addWidget(self.text_container)
-        self.main_layout.addStretch()
+        h_layout = QHBoxLayout(self)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.Center)
+        
+        # Avatar (Placeholder)
+        avatar_label = QLabel()
+        avatar_label.setPixmap(get_feather_icon("user", "white", 24).pixmap(QSize(24, 24)))
+        avatar_label.setFixedSize(28, 28)
+        avatar_label.setStyleSheet(f"border-radius: 14px; background-color: {AppConfig.PRIMARY_COLOR};")
+        
+        # Text
+        text_v_layout = QVBoxLayout()
+        text_v_layout.setContentsMargins(0, 0, 0, 0)
+        text_v_layout.setSpacing(0)
+        
+        username_label = QLabel(user_data.get('username', 'N/A'))
+        username_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL + 1, QFont.Weight.Bold))
+        username_label.setStyleSheet(f"color: {AppConfig.TEXT_DEFAULT};")
+        
+        role_label = QLabel(user_data.get('role', 'N/A'))
+        role_label.setStyleSheet(f"color: {AppConfig.TEXT_MUTED}; font-size: 8pt;")
+        
+        text_v_layout.addWidget(username_label)
+        text_v_layout.addWidget(role_label)
+        
+        h_layout.addWidget(avatar_label)
+        h_layout.addSpacing(10)
+        h_layout.addLayout(text_v_layout)
+        h_layout.addStretch(1)
 
 class ActionButtonsWidget(QWidget):
-    """Custom widget for the 'Actions' column (Edit, Perms, Delete buttons)."""
-    def __init__(self):
+    """A widget containing edit, permissions, and delete buttons."""
+    def __init__(self, user_id: int, on_edit, on_delete):
         super().__init__()
-        self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(5)
-        self.main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.edit_btn = self._create_tool_button("edit", "#3498db")
-        self.perms_btn = self._create_tool_button("key", "#f39c12")
-        self.delete_btn = self._create_tool_button("trash", "#e74c3c")
-
-        self.main_layout.addWidget(self.edit_btn)
-        self.main_layout.addWidget(self.perms_btn)
-        self.main_layout.addWidget(self.delete_btn)
-
-    def _create_tool_button(self, icon_name, color):
-        btn = QToolButton()
-        btn.setText(get_feather_icon(icon_name))
-        btn.setIconSize(QSize(18, 18))
-        btn.setFixedSize(QSize(30, 30))
-        btn.setStyleSheet(f"""
-            QToolButton {{
-                border: 1px solid {AppConfig.BORDER_GRAY};
-                border-radius: 8px;
-                background-color: white;
-                color: {color};
-                font-size: 10pt;
-            }}
-            QToolButton:hover {{
-                background-color: {AppConfig.BACKGROUND_LIGHT};
-            }}
-        """)
-        return btn
-
-# --- Main Administration Widget ---
-
-class AdminUserManagementWidget(QWidget):
-    """The main content widget for the Administration/User Management screen."""
-    
-    # Mock data for demonstration
-    USER_DATA = [
-        {"initials": "DT", "name": "David Thompson", "dept": "Sales", "role": "Retailer", "email": "david.t@example.com", "last_login": "2025-11-15", "status": "Active", "color": "#2ecc71"},
-        {"initials": "SM", "name": "Sarah Miller", "dept": "IT", "role": "Admin", "email": "sarah.m@example.com", "last_login": "2025-11-14", "status": "Suspended", "color": AppConfig.PRIMARY_BLUE},
-        {"initials": "JL", "name": "John Lewis", "dept": "HR", "role": "Manager", "email": "john.l@example.com", "last_login": "2025-11-01", "status": "Active", "color": "#9b59b6"},
-        {"initials": "EA", "name": "Emily Adams", "dept": "Marketing", "role": "Retailer", "email": "emily.a@example.com", "last_login": "2025-10-28", "status": "Inactive", "color": "#f1c40f"},
-        {"initials": "MB", "name": "Michael Brown", "dept": "Finance", "role": "Manager", "email": "michael.b@example.com", "last_login": "2025-11-16", "status": "Active", "color": "#1abc9c"},
-        {"initials": "NW", "name": "Nina White", "dept": "Warehouse", "role": "Retailer", "email": "nina.w@example.com", "last_login": "2025-11-15", "status": "Active", "color": "#34495e"},
-    ]
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("AdminUserManagementWidget")
-        self.setStyleSheet(f"#{self.objectName()} {{ background-color: white; }}")
+        h_layout = QHBoxLayout(self)
+        h_layout.setContentsMargins(5, 0, 5, 0)
+        h_layout.setSpacing(5)
         
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(30, 30, 30, 30)
-        self.main_layout.setSpacing(20)
-
-        self._setup_header()
-        self._setup_search_and_filters()
-        self._setup_user_table()
+        # Edit Button
+        edit_btn = QToolButton()
+        edit_btn.setIcon(get_feather_icon("edit-3", AppConfig.TEXT_MUTED, 16))
+        edit_btn.setToolTip("Edit User")
+        edit_btn.clicked.connect(lambda: on_edit(user_id))
         
-        # Load mock data
-        self.load_user_data()
+        # Delete Button
+        delete_btn = QToolButton()
+        delete_btn.setIcon(get_feather_icon("trash-2", AppConfig.DANGER_COLOR, 16))
+        delete_btn.setToolTip("Delete User")
+        delete_btn.clicked.connect(lambda: on_delete(user_id))
 
-    def _setup_header(self):
-        """Sets up the title and action buttons area."""
-        header_frame = QFrame()
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(10)
-
-        # Title and Description
-        title_container = QWidget()
-        title_vbox = QVBoxLayout(title_container)
-        title_vbox.setContentsMargins(0, 0, 0, 0)
-        title_vbox.setSpacing(0)
-
-        title_label = QLabel("User Management")
-        title_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_TITLE, QFont.Weight.Bold))
-        title_label.setStyleSheet(f"color: {AppConfig.SECONDARY_DARK};")
+        # Apply common style
+        style = "QToolButton { border: none; padding: 5px; border-radius: 5px;}"
+        style += "QToolButton:hover { background-color: #333333; }"
+        edit_btn.setStyleSheet(style)
+        delete_btn.setStyleSheet(style)
         
-        desc_label = QLabel("Manage user accounts, roles, and permissions.")
-        desc_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL))
-        desc_label.setStyleSheet("color: #7f8c8d;")
+        h_layout.addWidget(edit_btn)
+        h_layout.addWidget(delete_btn)
+        h_layout.addStretch(1)
 
-        title_vbox.addWidget(title_label)
-        title_vbox.addWidget(desc_label)
+# --- Admin Dashboard Widget ---
 
-        # Action Buttons
-        export_btn = self._create_action_button("Export All", "download", is_primary=False)
-        add_user_btn = self._create_action_button("Add User", "plus", is_primary=True)
+class UserManagementWidget(QWidget):
+    """The main user management view for the Admin role."""
+    def __init__(self, api_client: StockaDoodleAPI):
+        super().__init__()
+        self.api = api_client
+        self.current_user = self.api.session.user_data # Get user data from session
+        self.all_users: List[Dict[str, Any]] = []
+
+        self.setup_ui()
+        self.load_users()
+
+    def setup_ui(self):
+        """Sets up the layout for user management."""
+        v_layout = QVBoxLayout(self)
+        v_layout.setContentsMargins(20, 20, 20, 20)
+        v_layout.setSpacing(15)
+
+        # Header and Actions
+        header_h_layout = QHBoxLayout()
+        header_h_layout.setSpacing(10)
+
+        header_label = QLabel("User Management")
+        header_label.setObjectName("Header")
+        header_h_layout.addWidget(header_label)
+
+        header_h_layout.addStretch(1)
+
+        # Search and Filter
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search by Username or Role...")
+        self.search_input.setFixedWidth(250)
+        self.search_input.textChanged.connect(self.filter_users)
+        header_h_layout.addWidget(self.search_input)
+
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems(["All Roles", "Admin", "Manager", "Retailer"])
+        self.filter_combo.setFixedWidth(120)
+        self.filter_combo.currentIndexChanged.connect(self.filter_users)
+        header_h_layout.addWidget(self.filter_combo)
+
+        # Add User Button
+        self.add_user_btn = QPushButton(get_feather_icon("plus", "white", 16), "Add New User")
+        self.add_user_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.add_user_btn.clicked.connect(self.add_new_user)
+        header_h_layout.addWidget(self.add_user_btn)
+
+        v_layout.addLayout(header_h_layout)
+
+        # User Table
+        self.user_table = QTableWidget()
+        self.user_table.setColumnCount(6)
+        self.user_table.setHorizontalHeaderLabels(["ID", "User", "Role", "Status", "Created At", "Actions"])
+        self.user_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.user_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.user_table.verticalHeader().setVisible(False)
         
-        header_layout.addWidget(title_container)
-        header_layout.addStretch()
-        header_layout.addWidget(export_btn)
-        header_layout.addWidget(add_user_btn)
+        apply_table_styles(self.user_table)
         
-        self.main_layout.addWidget(header_frame)
+        # Stretch columns
+        header = self.user_table.horizontalHeader()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        self.user_table.setColumnWidth(5, 120)
 
-    def _create_action_button(self, text, icon_name, is_primary):
-        """Helper to create styled action buttons."""
-        button = QPushButton(f"  {get_feather_icon(icon_name)} {text}")
-        button.setFixedSize(QSize(150, 38))
-        font = QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, QFont.Weight.Bold)
-        button.setFont(font)
+        v_layout.addWidget(self.user_table)
 
-        if is_primary:
-            style = f"""
-                QPushButton {{
-                    background-color: {AppConfig.PRIMARY_BLUE};
-                    color: white;
-                    border: none;
-                    border-radius: 8px;
-                    padding: 8px 15px;
-                }}
-                QPushButton:hover {{
-                    background-color: #3168d1;
-                }}
-            """
+    def load_users(self):
+        """Fetches user data from the API and populates the table."""
+        self.user_table.setRowCount(0) # Clear existing rows
+        
+        # --- API Integration Point 4: users.list() ---
+        resp = self.api.users.list()
+
+        if resp.success:
+            self.all_users = resp.data
+            self.populate_table(self.all_users)
         else:
-            style = f"""
-                QPushButton {{
-                    background-color: {AppConfig.BACKGROUND_LIGHT};
-                    color: {AppConfig.TEXT_DEFAULT};
-                    border: 1px solid {AppConfig.BORDER_GRAY};
-                    border-radius: 8px;
-                    padding: 8px 15px;
-                }}
-                QPushButton:hover {{
-                    background-color: #dfe4e8;
-                }}
-            """
-        button.setStyleSheet(style)
-        return button
+            self.all_users = []
+            show_error_message("Data Error", f"Failed to load users: {resp.error}", self)
 
-    def _setup_search_and_filters(self):
-        """Sets up the search bar and filter dropdowns."""
-        filter_container = QFrame()
-        filter_vbox = QVBoxLayout(filter_container)
-        filter_vbox.setContentsMargins(0, 0, 0, 0)
-        filter_vbox.setSpacing(15)
-
-        # 1. Search Bar
-        search_line = QLineEdit()
-        search_line.setPlaceholderText("Search users by name, email, or department...")
-        search_line.setFixedHeight(38)
-        search_line.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL))
+    def populate_table(self, users: List[Dict[str, Any]]):
+        """Fills the QTableWidget with user data."""
+        self.user_table.setRowCount(len(users))
         
-        # Add a magnifying glass icon/text as a prefix to the search bar
-        search_line.setTextMargins(30, 0, 10, 0)
-        
-        search_icon_label = QLabel(get_feather_icon("search"))
-        search_icon_label.setStyleSheet(f"""
-            QLabel {{
-                padding-left: 10px;
-                font-size: 10pt;
-                color: #7f8c8d;
-            }}
-        """)
-        search_icon_label.setFixedSize(QSize(30, 38))
-        
-        # Use QAction or an overlaid widget for the icon (using QAction for simplicity)
-        search_action = QAction(search_line)
-        search_action.setText(get_feather_icon("search"))
-        search_line.addAction(search_action, QLineEdit.ActionPosition.LeadingPosition)
-
-        search_line.setStyleSheet(f"""
-            QLineEdit {{
-                border: 1px solid {AppConfig.BORDER_GRAY};
-                border-radius: 8px;
-                padding-left: 10px;
-                background-color: white;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {AppConfig.PRIMARY_BLUE};
-            }}
-        """)
-        
-        filter_vbox.addWidget(search_line)
-
-        # 2. Filters Row
-        filter_hbox = QHBoxLayout()
-        filter_hbox.setContentsMargins(0, 0, 0, 0)
-        filter_hbox.setSpacing(20)
-
-        # Helper function for creating a filter group
-        def create_filter_group(label_text, options):
-            group_widget = QWidget()
-            group_vbox = QVBoxLayout(group_widget)
-            group_vbox.setContentsMargins(0, 0, 0, 0)
-            group_vbox.setSpacing(5)
-
-            label = QLabel(label_text)
-            label.setStyleSheet(f"color: {AppConfig.TEXT_DEFAULT}; font-weight: bold; font-size: {AppConfig.FONT_SIZE_NORMAL - 1}pt;")
-
-            combo = QComboBox()
-            combo.addItems(options)
-            combo.setFixedWidth(150)
-            combo.setFixedHeight(34)
-            combo.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL))
-            combo.setStyleSheet(f"""
-                QComboBox {{
-                    border: 1px solid {AppConfig.BORDER_GRAY};
-                    border-radius: 6px;
-                    padding: 5px 10px;
-                    background-color: white;
-                }}
-                QComboBox::drop-down {{
-                    border: none;
-                    width: 20px;
-                }}
-            """)
+        for row, user in enumerate(users):
+            # 0. ID
+            item_id = QTableWidgetItem(str(user.get('id', 'N/A')))
+            item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.user_table.setItem(row, 0, item_id)
             
-            group_vbox.addWidget(label)
-            group_vbox.addWidget(combo)
-            return group_widget
+            # 1. User (NameCellWidget)
+            name_widget = NameCellWidget(user)
+            self.user_table.setCellWidget(row, 1, name_widget)
 
-        filter_hbox.addWidget(create_filter_group("Filter by Role", ["All Roles", "Admin", "Manager", "Retailer"]))
-        filter_hbox.addWidget(create_filter_group("Filter by Status", ["All Statuses", "Active", "Suspended", "Inactive"]))
-        filter_hbox.addWidget(create_filter_group("Filter by Department", ["All Depts", "Sales", "IT", "HR", "Marketing", "Finance", "Warehouse"]))
-        
-        # Status Label on the right
-        status_label = QLabel(f"Showing {len(self.USER_DATA)} of {len(self.USER_DATA)} users")
-        status_label.setStyleSheet("color: #7f8c8d; font-size: 10pt;")
-        
-        filter_hbox.addStretch()
-        filter_hbox.addWidget(status_label)
+            # 2. Role (BadgeLabel)
+            role_badge = BadgeLabel(user.get('role', 'N/A'), user.get('role', ''))
+            self.user_table.setCellWidget(row, 2, role_badge)
 
-        filter_vbox.addLayout(filter_hbox)
-        self.main_layout.addWidget(filter_container)
+            # 3. Status (BadgeLabel)
+            status_text = "Active" if user.get('is_active') else "Inactive"
+            status_badge = BadgeLabel(status_text, status_text)
+            self.user_table.setCellWidget(row, 3, status_badge)
+            
+            # 4. Created At
+            created_at_str = user.get('created_at', 'N/A')
+            item_created = QTableWidgetItem(format_date(created_at_str))
+            self.user_table.setItem(row, 4, item_created)
 
-    def _setup_user_table(self):
-        """Sets up the QTableWidget for user data."""
-        self.table_widget = QTableWidget()
-        self.table_widget.setColumnCount(6)
-        self.table_widget.setHorizontalHeaderLabels(["Name", "Role", "Email", "Last Login", "Status", "Actions"])
-        self.table_widget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table_widget.setShowGrid(False)
-        self.table_widget.verticalHeader().setVisible(False)
-        self.table_widget.horizontalHeader().setStretchLastSection(False)
-        
-        # Styling the header
-        header_font = QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, QFont.Weight.Bold)
-        self.table_widget.horizontalHeader().setFont(header_font)
-        
-        self.table_widget.setStyleSheet(f"""
-            QTableWidget {{
-                border: 1px solid {AppConfig.BORDER_GRAY};
-                border-radius: 12px;
-                background-color: white;
-                font-size: {AppConfig.FONT_SIZE_NORMAL}pt;
-            }}
-            QHeaderView::section {{
-                background-color: {AppConfig.BACKGROUND_LIGHT};
-                color: {AppConfig.TEXT_DEFAULT};
-                padding: 10px 5px;
-                border: none;
-                border-bottom: 1px solid {AppConfig.BORDER_GRAY};
-            }}
-            QHeaderView::section:last {{
-                border-right: none;
-            }}
-            QTableWidget::item {{
-                padding-left: 5px;
-            }}
-        """)
-        
-        # Set column widths (approximate distribution)
-        header = self.table_widget.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # Name
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed) # Role
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch) # Email
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed) # Last Login
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed) # Status
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed) # Actions
-
-        self.table_widget.setColumnWidth(1, 100)
-        self.table_widget.setColumnWidth(3, 120)
-        self.table_widget.setColumnWidth(4, 100)
-        self.table_widget.setColumnWidth(5, 120)
-
-        self.main_layout.addWidget(self.table_widget)
-
-    def load_user_data(self):
-        """Populates the QTableWidget with mock user data."""
-        self.table_widget.setRowCount(len(self.USER_DATA))
-        self.table_widget.verticalHeader().setDefaultSectionSize(55) # Taller rows for custom widgets
-
-        for row, data in enumerate(self.USER_DATA):
-            # 0. Name/Dept (Custom Widget)
-            name_widget = NameCellWidget(
-                data["initials"],
-                data["name"],
-                data["dept"],
-                data["color"]
+            # 5. Actions (ActionButtonsWidget)
+            actions_widget = ActionButtonsWidget(
+                user_id=user['id'],
+                on_edit=self.edit_user,
+                on_delete=self.delete_user
             )
-            self.table_widget.setCellWidget(row, 0, name_widget)
+            self.user_table.setCellWidget(row, 5, actions_widget)
 
-            # 1. Role (Custom Badge)
-            role_badge = BadgeLabel(data["role"], data["role"])
-            self.table_widget.setCellWidget(row, 1, role_badge)
+    def filter_users(self):
+        """Applies search text and role filter to the user list."""
+        search_text = self.search_input.text().lower()
+        selected_role = self.filter_combo.currentText()
+        
+        filtered = []
+        for user in self.all_users:
+            matches_search = search_text in user.get('username', '').lower() or search_text in user.get('role', '').lower()
+            matches_role = selected_role == "All Roles" or user.get('role') == selected_role
+            
+            if matches_search and matches_role:
+                filtered.append(user)
+                
+        self.populate_table(filtered)
 
-            # 2. Email (Simple Text)
-            email_item = QTableWidgetItem(data["email"])
-            self.table_widget.setItem(row, 2, email_item)
+    def add_new_user(self):
+        """Placeholder for opening the Add New User dialog."""
+        show_success_message("Feature Stub", "Opening dialog to add a new user (API: users.create()).", self)
+        # A real implementation would launch a UserDialog
+        
+    def edit_user(self, user_id: int):
+        """Handles the 'Edit' action."""
+        user = next((u for u in self.all_users if u['id'] == user_id), None)
+        if not user: return
+        
+        # Mock API call for update: change status/role
+        new_status = not user['is_active']
+        new_data = {'is_active': new_status}
+        
+        # --- API Integration Point 5: users.update() ---
+        resp = self.api.users.update(user_id, new_data)
+        
+        if resp.success:
+            # Log action
+            self.api.admin.log_desktop_action(
+                user_id=self.current_user['id'],
+                action="USER_UPDATED",
+                target=user['username'],
+                details={"status_change": new_status}
+            )
+            # Refresh UI
+            show_success_message("Update Successful", f"User {user['username']} status toggled.", self)
+            self.load_users()
+        else:
+            show_error_message("Update Failed", resp.error, self)
+        
+    def delete_user(self, user_id: int):
+        """Handles the 'Delete' action."""
+        user = next((u for u in self.all_users if u['id'] == user_id), None)
+        if not user: return
 
-            # 3. Last Login (Simple Text)
-            login_item = QTableWidgetItem(data["last_login"])
-            login_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table_widget.setItem(row, 3, login_item)
+        # In a real app, you would use a custom confirmation dialog here
+        
+        # --- API Integration Point 6: users.delete() ---
+        resp = self.api.users.delete(user_id)
+        
+        if resp.success:
+            # Log action
+            self.api.admin.log_desktop_action(
+                user_id=self.current_user['id'],
+                action="USER_DELETED",
+                target=user['username'],
+                details={"user_id": user_id}
+            )
+            # Refresh UI
+            show_success_message("Deletion Successful", f"User {user['username']} deleted.", self)
+            self.load_users()
+        else:
+            show_error_message("Deletion Failed", resp.error, self)
 
-            # 4. Status (Custom Badge)
-            status_badge = BadgeLabel(data["status"], data["status"])
-            self.table_widget.setCellWidget(row, 4, status_badge)
 
-            # 5. Actions (Custom Buttons)
-            actions_widget = ActionButtonsWidget()
-            self.table_widget.setCellWidget(row, 5, actions_widget)
+class ActivityLogWidget(QWidget):
+    """Displays a table of activity logs fetched from the Admin API endpoint."""
+    def __init__(self, api_client: StockaDoodleAPI):
+        super().__init__()
+        self.api = api_client
+        self.current_user = self.api.session.user_data
+        self.all_logs: List[Dict[str, Any]] = []
+        self.setup_ui()
+        self.load_logs()
+
+    def setup_ui(self):
+        v_layout = QVBoxLayout(self)
+        v_layout.setContentsMargins(0, 0, 0, 0)
+        v_layout.setSpacing(10)
+        
+        # Header and Actions
+        header_h_layout = QHBoxLayout()
+        header_label = QLabel("Activity Logs")
+        header_label.setObjectName("Header")
+        header_h_layout.addWidget(header_label)
+
+        header_h_layout.addStretch(1)
+        
+        # Filter by Source
+        self.source_combo = QComboBox()
+        self.source_combo.addItems(["All Sources", "Desktop App", "Postman"])
+        self.source_combo.setFixedWidth(150)
+        self.source_combo.currentIndexChanged.connect(self.filter_logs)
+        header_h_layout.addWidget(self.source_combo)
+
+        # Export Button (New Requirement)
+        export_btn = QPushButton(get_feather_icon("download", "white", 16), "Export All")
+        export_btn.setFixedWidth(120)
+        export_btn.clicked.connect(self.export_logs)
+        header_h_layout.addWidget(export_btn)
+
+        v_layout.addLayout(header_h_layout)
+        
+        # Logs Table
+        self.log_table = QTableWidget()
+        self.log_table.setColumnCount(6)
+        self.log_table.setHorizontalHeaderLabels(["ID", "Timestamp", "User", "Method", "Source", "Target/Details"])
+        self.log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.log_table.verticalHeader().setVisible(False)
+        
+        apply_table_styles(self.log_table)
+        
+        header = self.log_table.horizontalHeader()
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        self.log_table.setColumnWidth(0, 50)
+        self.log_table.setColumnWidth(4, 120)
+        
+        v_layout.addWidget(self.log_table)
+
+    def load_logs(self):
+        """Fetches activity logs from the API and populates the table."""
+        self.log_table.setRowCount(0)
+        
+        # --- API Integration Point 7: admin.get_activity_logs() ---
+        resp = self.api.admin.get_activity_logs(limit=100)
+        
+        if resp.success:
+            self.all_logs = resp.data
+            self.populate_table(self.all_logs)
+        else:
+            self.all_logs = []
+            show_error_message("Data Error", f"Failed to load activity logs: {resp.error}", self)
+
+    def populate_table(self, logs: List[Dict[str, Any]]):
+        """Fills the QTableWidget with log data."""
+        self.log_table.setRowCount(len(logs))
+        
+        for row, log in enumerate(logs):
+            # 0. ID
+            item_id = QTableWidgetItem(str(log.get('id', 'N/A')))
+            item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.log_table.setItem(row, 0, item_id)
+            
+            # 1. Timestamp
+            item_time = QTableWidgetItem(format_date(log.get('timestamp', 'N/A')))
+            self.log_table.setItem(row, 1, item_time)
+            
+            # 2. User
+            item_user = QTableWidgetItem(log.get('user_username', 'System'))
+            self.log_table.setItem(row, 2, item_user)
+            
+            # 3. Method
+            item_method = QTableWidgetItem(log.get('method', 'N/A'))
+            self.log_table.setItem(row, 3, item_method)
+            
+            # 4. Source (BadgeLabel)
+            source_badge = BadgeLabel(log.get('source', 'N/A'), log.get('source', ''))
+            self.log_table.setCellWidget(row, 4, source_badge)
+            
+            # 5. Target/Details
+            details = f"{log.get('target', 'N/A')}: {log.get('details', '')}"
+            item_details = QTableWidgetItem(details)
+            self.log_table.setItem(row, 5, item_details)
+
+    def filter_logs(self):
+        """Filters logs based on the selected source."""
+        selected_source = self.source_combo.currentText()
+        
+        if selected_source == "All Sources":
+            filtered = self.all_logs
+        else:
+            filtered = [log for log in self.all_logs if log.get('source') == selected_source]
+            
+        self.populate_table(filtered)
+
+    def export_logs(self):
+        """Placeholder for exporting logs to a file."""
+        show_success_message("Export Complete", "Activity logs have been exported successfully to CSV/Excel (simulated).", self)
 
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    
-    # Create a wrapper window to hold the Admin widget and mimic the full app look
-    main_window = QWidget()
-    main_window.setWindowTitle("Administration - User Management")
-    main_window.setGeometry(100, 100, 1000, 700)
-    
-    # Add a simple sidebar placeholder for context
-    h_layout = QHBoxLayout(main_window)
-    h_layout.setContentsMargins(0, 0, 0, 0)
-    h_layout.setSpacing(0)
-    
-    sidebar = QFrame()
-    sidebar.setFixedWidth(220)
-    sidebar.setStyleSheet("background-color: #2c3e50; border-right: 1px solid #34495e;")
-    sidebar_layout = QVBoxLayout(sidebar)
-    sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-    
-    # The actual 'Administration' tab entry
-    admin_label = QLabel("  Administration")
-    admin_label.setStyleSheet("color: white; padding: 10px; margin-top: 50px; background-color: #34495e; border-left: 5px solid #3a7afb; font-weight: bold;")
-    sidebar_layout.addWidget(admin_label)
-    
-    h_layout.addWidget(sidebar)
-    
-    # Add the main content widget
-    admin_widget = AdminUserManagementWidget()
-    h_layout.addWidget(admin_widget)
+class AdminDashboardWidget(QWidget):
+    """
+    Main Admin Dashboard container, combining User Management and Activity Logs.
+    This serves as the main page for the 'Dashboard' navigation item.
+    """
+    def __init__(self, api_client: StockaDoodleAPI):
+        super().__init__()
+        self.api = api_client
+        
+        self.user_management_widget = UserManagementWidget(api_client)
+        self.activity_log_widget = ActivityLogWidget(api_client)
 
-    main_window.show()
-    sys.exit(app.exec())
+        self.setup_ui()
+
+    def setup_ui(self):
+        v_layout = QVBoxLayout(self)
+        v_layout.setContentsMargins(20, 20, 20, 20)
+        v_layout.setSpacing(20)
+
+        # Main Dashboard Title
+        title_label = QLabel("Admin Overview")
+        title_label.setObjectName("Title")
+        v_layout.addWidget(title_label)
+        
+        # KPI Cards (Placeholder for Admin Overview)
+        kpi_frame = QFrame()
+        kpi_frame.setLayout(QHBoxLayout())
+        kpi_frame.layout().setSpacing(20)
+        kpi_frame.layout().setContentsMargins(0, 0, 0, 0)
+        
+        kpi_frame.layout().addWidget(self._create_kpi_card("Total Users", str(len(MOCK_USERS)), "users"))
+        kpi_frame.layout().addWidget(self._create_kpi_card("Active Products", "45", "package"))
+        kpi_frame.layout().addWidget(self._create_kpi_card("Pending Sales", "3", "dollar-sign"))
+        
+        v_layout.addWidget(kpi_frame)
+
+        # Content Split: User Management (60%) and Activity Log (40%)
+        content_h_split = QHBoxLayout()
+        content_h_split.setSpacing(20)
+
+        # 1. User Management
+        user_frame = QFrame()
+        user_frame.setLayout(QVBoxLayout())
+        user_frame.layout().setContentsMargins(0, 0, 0, 0)
+        user_frame.layout().addWidget(self.user_management_widget)
+        content_h_split.addWidget(user_frame, 3) # 60% weight
+
+        # 2. Activity Log
+        activity_frame = QFrame()
+        activity_frame.setLayout(QVBoxLayout())
+        activity_frame.layout().setContentsMargins(10, 10, 10, 10)
+        activity_frame.layout().addWidget(self.activity_log_widget)
+        
+        activity_frame.setObjectName("Card")
+        activity_frame.setStyleSheet(get_dashboard_card_style())
+        
+        content_h_split.addWidget(activity_frame, 2) # 40% weight
+
+        v_layout.addLayout(content_h_split)
+        v_layout.addStretch(1)
+
+    def _create_kpi_card(self, title: str, value: str, icon_name: str) -> QFrame:
+        """Helper to create a standard KPI card frame."""
+        card = QFrame()
+        card.setObjectName("Card")
+        card.setStyleSheet(get_dashboard_card_style())
+        
+        v_layout = QVBoxLayout(card)
+        v_layout.setSpacing(5)
+        
+        # Icon and Title
+        h_header = QHBoxLayout()
+        h_header.addWidget(QLabel(title))
+        h_header.addStretch(1)
+        icon_label = QLabel()
+        icon_label.setPixmap(get_feather_icon(icon_name, AppConfig.PRIMARY_COLOR, 24).pixmap(QSize(24, 24)))
+        h_header.addWidget(icon_label)
+        v_layout.addLayout(h_header)
+        
+        # Value
+        value_label = QLabel(value)
+        value_label.setFont(QFont(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_TITLE, QFont.Weight.Black))
+        value_label.setStyleSheet(f"color: {AppConfig.TEXT_DEFAULT};")
+        v_layout.addWidget(value_label)
+        
+        return card

@@ -31,6 +31,7 @@ def create_app():
     
     # Initialize extensions with app
     db.init_app(app)
+    init_activity_logging(app)  
     migrate.init_app(app, db)
     
     # Import models to register with SQLAlchemy

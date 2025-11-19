@@ -1,303 +1,244 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QPushButton, QLabel, QStackedWidget, QSizePolicy,
-                             QMessageBox, QDialog)
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, 
+    QPushButton, QLabel, QFrame, QSizePolicy, QSpacerItem, QToolButton
+)
 from PyQt6.QtGui import QIcon, QFont, QPixmap
 from PyQt6.QtCore import Qt, QSize
-import os
-from ui.dashboard_widgets import AdminDashboardWidget, ManagerDashboardWidget, RetailerDashboardWidget
-from ui.product_management import ProductManagementWidget
-from ui.user_management import UserManagementWidget
-from ui.category_management import CategoryManagementWidget
-from ui.sales_management import SalesManagementWidget
-from utils.helpers import get_feather_icon
-from utils.config import AppConfig
-from utils.decorators import role_required
-from core.activity_logger import ActivityLogger
-from utils.styles import get_global_stylesheet  # Import global stylesheet
 
+# Import UI components (stubs are fine for now)
+from ui.admin_dashboard import AdminDashboardWidget
+# from ui.manager_dashboard import ManagerDashboardWidget # Phase 2
+# from ui.retailer_pos import RetailerDashboardWidget # Phase 2
+# from ui.product_management import ProductManagementWidget # Phase 2
+# from ui.category_management import CategoryManagementWidget # Phase 3
+# from ui.sales_management import SalesManagementWidget # Phase 3
+
+from api_client.stockadoodle_api import StockaDoodleAPI
+from utils.config import AppConfig, SESSION
+from utils.styles import get_global_stylesheet, get_dashboard_card_style
+from utils.helpers import get_feather_icon
 
 class MainWindow(QMainWindow):
-    def __init__(self, current_user, parent=None):
-        """
-        Initialize the main window with user-specific content.
-        The main window contains the sidebar navigation and content area.
-        """
-        super().__init__(parent)
-        self.current_user = current_user
-        self.logger = ActivityLogger()
-        self.setWindowTitle("Inventory Management System")
-        self.setMinimumSize(1024, 768)
-
-        # Apply global stylesheet
+    """
+    Main application window with unified dark sidebar, top bar, and stacked widget
+    for role-based navigation.
+    """
+    def __init__(self, api_client: StockaDoodleAPI):
+        super().__init__()
+        self.api = api_client
+        self.session = SESSION
+        self.current_user = self.session.user_data
+        
+        self.setWindowTitle("StockaDoodle Inventory")
+        self.setMinimumSize(1200, 800)
         self.setStyleSheet(get_global_stylesheet())
         
-        self.init_ui()
-
-    def init_ui(self):
-        """
-        Initialize the user interface with widgets and layout.
-        Creates the sidebar navigation and content area.
-        """
+        self.current_role = self.session.get_role()
+        
+        self.setup_ui()
+        self.show_default_page()
+        
+    def setup_ui(self):
+        """Initializes the main layout: Sidebar, Top Bar, and Content Area."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # --- Sidebar ---
-        self.sidebar = QWidget()
-        self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(220)
-        sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar_layout.setSpacing(0)
-        sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # App Logo
-        logo_container = QWidget()
-        logo_container.setObjectName("logoContainer")
-        logo_container.setStyleSheet(f"""
-            #logoContainer {{
-                background-color: {AppConfig.DARK_BACKGROUND};
-                padding: 15px 0px;
-                border-bottom: 1px solid rgba(255,255,255,0.1);
-            }}
-        """)
-        logo_layout = QHBoxLayout(logo_container)
-        logo_layout.setContentsMargins(15, 5, 15, 5)
         
-        logo_label = QLabel("IMS")
-        logo_label.setStyleSheet(f"""
-            font-size: 22px;
-            font-weight: bold;
-            color: {AppConfig.LIGHT_TEXT};
-        """)
-        version_label = QLabel("v1.0")
-        version_label.setStyleSheet(f"color: rgba(255,255,255,0.5); font-size: 10px;")
+        main_h_layout = QHBoxLayout(central_widget)
+        main_h_layout.setContentsMargins(0, 0, 0, 0)
+        main_h_layout.setSpacing(0)
         
-        logo_layout.addWidget(logo_label)
-        logo_layout.addWidget(version_label, alignment=Qt.AlignmentFlag.AlignBottom)
-        sidebar_layout.addWidget(logo_container)
-
-        # User Info
-        user_info_widget = QWidget()
-        user_info_widget.setObjectName("userInfoWidget")
-        user_info_widget.setStyleSheet(f"""
-            #userInfoWidget {{
-                background-color: rgba(0,0,0,0.2);
-                padding: 15px 0px;
-                border-bottom: 1px solid rgba(255,255,255,0.05);
-            }}
-        """)
-        user_info_layout = QVBoxLayout(user_info_widget)
-        user_info_layout.setContentsMargins(15, 10, 15, 10)
-        user_info_layout.setSpacing(5)
-
-        # User avatar and info
-        user_avatar_layout = QHBoxLayout()
-        user_avatar_layout.setSpacing(10)
+        # 1. Unified Dark Sidebar
+        self.sidebar = self._create_sidebar()
+        main_h_layout.addWidget(self.sidebar)
         
-        user_icon_label = QLabel()
-        user_icon_label.setPixmap(get_feather_icon("user", color="white", size=32).pixmap(32, 32))
-        user_avatar_layout.addWidget(user_icon_label)
+        # Content container (Top Bar + Stacked Widget)
+        content_v_container = QWidget()
+        content_v_layout = QVBoxLayout(content_v_container)
+        content_v_layout.setContentsMargins(0, 0, 0, 0)
+        content_v_layout.setSpacing(0)
         
-        user_details_layout = QVBoxLayout()
-        user_details_layout.setSpacing(2)
+        # 2. Top Bar
+        self.top_bar = self._create_top_bar()
+        content_v_layout.addWidget(self.top_bar)
         
-        username_label = QLabel(self.current_user.get("username", "Guest"))
-        username_label.setObjectName("userNameLabel")
-        user_details_layout.addWidget(username_label)
-
-        role_label = QLabel(self.current_user.get("role", "Unknown").capitalize())
-        role_label.setStyleSheet(f"color: rgba(255,255,255,0.7); font-size: {AppConfig.FONT_SIZE_NORMAL-1}pt;")
-        user_details_layout.addWidget(role_label)
+        # 3. QStackedWidget for dashboard pages
+        self.stacked_widget = QStackedWidget()
+        self._initialize_dashboards()
+        content_v_layout.addWidget(self.stacked_widget)
         
-        user_avatar_layout.addLayout(user_details_layout)
-        user_info_layout.addLayout(user_avatar_layout)
+        main_h_layout.addWidget(content_v_container)
+
+    def _create_sidebar(self) -> QWidget:
+        """Creates the dark navigation sidebar (220px width)."""
+        sidebar = QWidget()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(220)
         
-        sidebar_layout.addWidget(user_info_widget)
+        v_layout = QVBoxLayout(sidebar)
+        v_layout.setContentsMargins(10, 20, 10, 10)
+        v_layout.setSpacing(10)
+        
+        # Sidebar Logo/Title
+        logo_label = QLabel("StockaDoodle")
+        logo_label.setObjectName("Title")
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_label.setStyleSheet(f"color: white; margin-bottom: 20px; font-size: {AppConfig.FONT_SIZE_TITLE}pt;")
+        v_layout.addWidget(logo_label)
+        
+        # Navigation Buttons (Role-based visibility)
+        self.nav_buttons: Dict[str, QPushButton] = {}
+        nav_items = [
+            ("Dashboard", "activity", ["Admin", "Manager", "Retailer"]),
+            ("User Management", "users", ["Admin"]),
+            ("Product Management", "package", ["Admin", "Manager"]),
+            ("Category Management", "settings", ["Admin", "Manager"]),
+            ("Sales Management", "dollar-sign", ["Admin", "Manager"]),
+            ("Retailer POS", "shopping-cart", ["Retailer"]),
+        ]
+        
+        for name, icon_name, roles in nav_items:
+            if self.current_role in roles:
+                button = QPushButton(name)
+                button.setObjectName(name.replace(" ", ""))
+                button.setProperty("class", "SidebarButton")
+                button.setIcon(get_feather_icon(icon_name, AppConfig.TEXT_MUTED))
+                button.setIconSize(QSize(20, 20))
+                button.setCheckable(True)
+                button.clicked.connect(lambda _, n=name: self.switch_page(n))
+                v_layout.addWidget(button)
+                self.nav_buttons[name] = button
 
-        # Navigation label
-        nav_label = QLabel("NAVIGATION")
-        nav_label.setStyleSheet(f"""
-            color: rgba(255,255,255,0.5);
-            font-size: 10px;
-            padding: 15px 15px 5px 15px;
-            font-weight: bold;
-        """)
-        sidebar_layout.addWidget(nav_label)
+        v_layout.addStretch(1)
+        
+        return sidebar
 
-        # Navigation Buttons
-        self.btn_group = []  # To manage checked state for buttons
-
-        self.dashboard_btn = self._create_nav_button("Dashboard", "home", "dashboard")
-        self.product_btn = self._create_nav_button("Products", "package", "product_management")
-        self.category_btn = self._create_nav_button("Categories", "grid", "category_management")
-        self.user_btn = self._create_nav_button("Users", "users", "user_management")
-        self.sales_btn = self._create_nav_button("Sales", "dollar-sign", "sales_management")
-
-        sidebar_layout.addWidget(self.dashboard_btn)
-        sidebar_layout.addWidget(self.product_btn)
-        sidebar_layout.addWidget(self.category_btn)
-        sidebar_layout.addWidget(self.user_btn)
-        sidebar_layout.addWidget(self.sales_btn)
-
-        sidebar_layout.addStretch()  # Pushes buttons to top
-
+    def _create_top_bar(self) -> QWidget:
+        """Creates the top bar with user info and logout."""
+        top_bar = QFrame()
+        top_bar.setFixedHeight(60)
+        top_bar.setStyleSheet(f"background-color: {AppConfig.CARD_BACKGROUND}; border-bottom: 1px solid #2A2A2A;")
+        
+        h_layout = QHBoxLayout(top_bar)
+        h_layout.setContentsMargins(20, 0, 10, 0)
+        h_layout.setSpacing(10)
+        
+        # Current Page Title
+        self.page_title_label = QLabel("Dashboard")
+        self.page_title_label.setObjectName("Header")
+        h_layout.addWidget(self.page_title_label)
+        
+        h_layout.addStretch(1)
+        
+        # User Info (Name and Role)
+        user_info_v_layout = QVBoxLayout()
+        user_info_v_layout.setSpacing(2)
+        user_info_v_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        username_label = QLabel(self.current_user.get('username', 'User'))
+        username_label.setFont(QFont(AppConfig.FONT_FAMILY, 11, QFont.Weight.Bold))
+        username_label.setStyleSheet(f"color: {AppConfig.TEXT_DEFAULT};")
+        
+        role_label = QLabel(self.current_role)
+        role_label.setStyleSheet(f"color: {AppConfig.PRIMARY_COLOR}; font-size: 9pt;")
+        
+        user_info_v_layout.addWidget(username_label)
+        user_info_v_layout.addWidget(role_label)
+        
+        h_layout.addLayout(user_info_v_layout)
+        
+        # Avatar/Icon (Placeholder)
+        avatar_label = QLabel()
+        avatar_label.setPixmap(get_feather_icon("user", "white", 32).pixmap(QSize(32, 32)))
+        avatar_label.setFixedSize(32, 32)
+        avatar_label.setStyleSheet(f"border-radius: 16px; background-color: {AppConfig.PRIMARY_COLOR};")
+        h_layout.addWidget(avatar_label)
+        
         # Logout Button
-        logout_btn = QPushButton("Logout")
-        logout_btn.setIcon(get_feather_icon("log-out", size=16))
-        logout_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: rgba(231, 76, 60, 0.8);
-                color: white;
-                border: none;
-                padding: 10px;
-                margin: 15px;
-                border-radius: 5px;
-                text-align: center;
-            }}
-            QPushButton:hover {{
-                background-color: rgba(231, 76, 60, 1.0);
-            }}
-        """)
-        logout_btn.clicked.connect(self.logout)
-        sidebar_layout.addWidget(logout_btn)
-
-        main_layout.addWidget(self.sidebar)
-
-        # --- Content Area ---
-        content_container = QWidget()
-        content_container.setObjectName("contentArea")
-        content_layout = QVBoxLayout(content_container)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-
-        self.content_area = QStackedWidget()
-        content_layout.addWidget(self.content_area)
-        main_layout.addWidget(content_container, 1)  # 1 = stretch factor
-
-        # Load all pages
-        self._load_pages()
+        logout_button = QToolButton()
+        logout_button.setIcon(get_feather_icon("log-out", AppConfig.DANGER_COLOR, 24))
+        logout_button.setToolTip("Logout")
+        logout_button.setStyleSheet("QToolButton {border: none;}")
+        logout_button.clicked.connect(self.logout)
+        h_layout.addWidget(logout_button)
         
-        # Apply role-based permissions
-        self._apply_role_permissions()
+        return top_bar
+
+    def _initialize_dashboards(self):
+        """Instantiates all dashboard widgets and adds them to the stacked widget."""
         
-        # Set initial page
-        self._set_initial_page()
+        # Pass the api_client and current_user data as required
+        
+        # Admin Dashboards
+        if self.current_role == "Admin":
+            admin_dash = AdminDashboardWidget(api_client=self.api)
+            self.stacked_widget.addWidget(admin_dash) # Index 0: Admin Dashboard
+            self.stacked_widget.addWidget(admin_dash.user_management_widget) # Index 1: User Management (part of admin)
+            self.page_map = {
+                "Dashboard": 0,
+                "User Management": 1,
+                # Placeholders for other Admin pages
+                "Product Management": 2, 
+                "Category Management": 3,
+                "Sales Management": 4,
+            }
+        
+        # Manager Dashboards (Placeholder indices)
+        elif self.current_role == "Manager":
+            # manager_dash = ManagerDashboardWidget(api_client=self.api)
+            # self.stacked_widget.addWidget(manager_dash)
+            self.page_map = {
+                "Dashboard": 0,
+                "Product Management": 1,
+                "Category Management": 2,
+                "Sales Management": 3,
+            }
+            # Placeholder widgets for now:
+            self.stacked_widget.addWidget(QWidget())
+            self.stacked_widget.addWidget(QWidget())
+            self.stacked_widget.addWidget(QWidget())
+            self.stacked_widget.addWidget(QWidget())
 
-    def _create_nav_button(self, text, icon_name, page_name):
-        button = QPushButton(text)
-        button.setIcon(get_feather_icon(icon_name, size=20))
-        button.setCheckable(True)
-        button.clicked.connect(lambda: self._switch_page(page_name, button))
-        self.btn_group.append(button)
-        return button
+        # Retailer Dashboards (Placeholder indices)
+        elif self.current_role == "Retailer":
+            # retailer_pos = RetailerDashboardWidget(api_client=self.api)
+            # self.stacked_widget.addWidget(retailer_pos)
+            self.page_map = {
+                "Dashboard": 0,
+                "Retailer POS": 1,
+            }
+            # Placeholder widgets for now:
+            self.stacked_widget.addWidget(QWidget())
+            self.stacked_widget.addWidget(QWidget())
 
-    def _switch_page(self, page_name, clicked_button):
-        # Uncheck all buttons except the clicked one
-        for btn in self.btn_group:
-            if btn != clicked_button:
-                btn.setChecked(False)
-        clicked_button.setChecked(True)
+    def switch_page(self, page_name: str):
+        """Switches the view in the QStackedWidget and updates sidebar state."""
+        index = self.page_map.get(page_name)
+        if index is not None:
+            self.stacked_widget.setCurrentIndex(index)
+            self.page_title_label.setText(page_name)
+            
+            # Update button check state
+            for name, button in self.nav_buttons.items():
+                button.setChecked(name == page_name)
+        else:
+            print(f"Warning: Page '{page_name}' not found in map.")
 
-        # Find the widget by object name (which is set to page_name)
-        for i in range(self.content_area.count()):
-            widget = self.content_area.widget(i)
-            if widget.objectName() == page_name:
-                # Store current page to avoid refreshing if we're already on it
-                current_widget = self.content_area.currentWidget()
-                if current_widget != widget:
-                    # Only switch and refresh if we're actually changing pages
-                    self.content_area.setCurrentWidget(widget)
-                    
-                    # Refresh data in the new widget - but only call specific methods if they exist
-                    # Use hasattr check to avoid errors and prevent multiple pop-ups
-                    if hasattr(widget, 'load_dashboard_data') and page_name == "dashboard":
-                        # Call dashboard data loading only if method exists and we're going to dashboard
-                        widget.load_dashboard_data()
-                    elif hasattr(widget, 'refresh_products_display') and page_name == "product_management":
-                        # Only refresh product display if method exists and we're going to product management
-                        widget.refresh_products_display()
-                    elif hasattr(widget, 'load_users') and page_name == "user_management":
-                        widget.load_users()
-                    elif hasattr(widget, 'load_categories') and page_name == "category_management":
-                        widget.load_categories()
-                    elif hasattr(widget, 'load_sales_data') and page_name == "sales_management":
-                        widget.load_sales_data()
-                break
-
-    def _load_pages(self):
-        # Dashboard (role-specific)
-        if self.current_user['role'] == 'admin':
-            dashboard_widget = AdminDashboardWidget(self.current_user)
-        elif self.current_user['role'] == 'manager':
-            dashboard_widget = ManagerDashboardWidget(self.current_user)
-        else:  # retailer
-            dashboard_widget = RetailerDashboardWidget(self.current_user)
-        dashboard_widget.setObjectName("dashboard")
-        self.content_area.addWidget(dashboard_widget)
-
-        # Other pages
-        product_widget = ProductManagementWidget(self.current_user)
-        product_widget.setObjectName("product_management")
-        self.content_area.addWidget(product_widget)
-
-        category_widget = CategoryManagementWidget(self.current_user)
-        category_widget.setObjectName("category_management")
-        self.content_area.addWidget(category_widget)
-
-        user_widget = UserManagementWidget(self.current_user)
-        user_widget.setObjectName("user_management")
-        self.content_area.addWidget(user_widget)
-
-        sales_widget = SalesManagementWidget(self.current_user)
-        sales_widget.setObjectName("sales_management")
-        self.content_area.addWidget(sales_widget)
-
-    def _set_initial_page(self):
-        # Set dashboard as initial page and mark its button as checked
-        self.content_area.setCurrentIndex(0)  # Dashboard is always the first added
-        self.dashboard_btn.setChecked(True)
-
-    def _apply_role_permissions(self):
-        role = self.current_user['role']
-        if role == 'retailer':
-            self.user_btn.hide()
-            self.category_btn.hide()
-            # Sales management might be restricted to just viewing own sales, not full reports
-            # For now, sales_management is visible to retailer, but its internal logic might restrict
-            # what they can do (e.g., only record sales, not view all reports).
-            # The AdminDashboardWidget and ManagerDashboardWidget are loaded based on role,
-            # and their internal buttons (like Add Stock/Edit Product) are also role-restricted.
-        elif role == 'manager':
-            self.user_btn.hide()  # Managers might not manage users
-            # Other pages visible by default
-        elif role == 'admin':
-            # Ensure admin has access to all sections
-            self.product_btn.show()  # Explicitly show product management for admin
-            self.category_btn.show()
-            self.user_btn.show()
-            self.sales_btn.show()
-        # Admin has access to all by default
+    def show_default_page(self):
+        """Determines the default landing page based on role."""
+        if self.current_role == 'Admin':
+            self.switch_page("User Management") # Admin default page
+        elif self.current_role == 'Manager':
+            self.switch_page("Dashboard")
+        elif self.current_role == 'Retailer':
+            self.switch_page("Retailer POS")
 
     def logout(self):
-        reply = QMessageBox.question(self, "Logout", "Are you sure you want to logout?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            # Close the main window
-            self.hide()
-            
-            # Show login window
-            from ui.login_window import LoginWindow
-            self.login_window = LoginWindow()
-            self.login_window.show()
-            
-            # Set up a connection for when login is successful
-            if hasattr(self.login_window, 'accepted'):
-                self.login_window.accepted.connect(self.close)  # Close main window when login accepts
-            
-            # Alternatively, you can connect to the finished signal with a lambda to check result
-            self.login_window.finished.connect(
-                lambda result: self.close() if result == QDialog.DialogCode.Accepted else self.show()
-            )
+        """Calls the API logout and closes the main window."""
+        self.api.logout()
+        # Find the parent login window and handle the transition
+        from ui.login_window import LoginWindow
+        login_window = next((w for w in QApplication.topLevelWidgets() if isinstance(w, LoginWindow)), None)
+        if login_window:
+            login_window.handle_logout()
+        else:
+            QApplication.quit()

@@ -3,6 +3,7 @@ from app import db
 from models.product import Product
 from models.category import Category
 from utils.validators import validate_product_data, validate_or_400
+from core.activity_logger import ActivityLogger  
 import base64
 
 bp = Blueprint('products', __name__)

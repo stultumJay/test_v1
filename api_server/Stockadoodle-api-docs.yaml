@@ -1,0 +1,1138 @@
+﻿openapi: 3.0.0
+info:
+  title: StockaDoodle Inventory Management API
+  description: >
+    RESTful API for the StockaDoodle desktop inventory management system. This
+    documentation describes the local API instance running at each individual
+    QuickMart store (e.g., Quezon City, Makati, Taguig). 
+
+    Each instance uses a local SQLite database and operates independently.
+  version: v1
+servers:
+  - url: 'http://127.0.0.1:5000/api/v1'
+    description: Local Flask API Server for the current store location
+paths:
+  /products:
+    get:
+      tags:
+        - Products
+      summary: Retrieve all products
+      description: >-
+        Retrieve all products with optional filters (category, search term,
+        stock levels).
+      parameters:
+        - in: query
+          name: category_id
+          schema:
+            type: integer
+          description: Filter products by category ID.
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Filter by product name or brand.
+        - in: query
+          name: low_stock
+          schema:
+            type: boolean
+          description: 'If true, filters for products below minimum stock level.'
+      responses:
+        '200':
+          description: A list of products.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    post:
+      tags:
+        - Products
+      summary: Create a new product
+      description: Create new product with required fields including image_blob (base64).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          description: Product successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+  '/products/{product_id}':
+    get:
+      tags:
+        - Products
+      summary: Get single product details
+      description: Get single product details including image_blob (base64 encoded).
+      parameters:
+        - in: path
+          name: product_id
+          schema:
+            type: integer
+          required: true
+          description: The ID of the product.
+      responses:
+        '200':
+          description: Product details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+    put:
+      tags:
+        - Products
+      summary: Update all product fields (full replacement)
+      description: Full replacement update of all product fields.
+      parameters:
+        - in: path
+          name: product_id
+          schema:
+            type: integer
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '200':
+          description: Product successfully updated.
+    patch:
+      tags:
+        - Products
+      summary: Partial update of product fields
+      description: Apply a partial update to one or more product fields.
+      parameters:
+        - in: path
+          name: product_id
+          schema:
+            type: integer
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Product successfully patched.
+    delete:
+      tags:
+        - Products
+      summary: Delete product
+      description: Deletes (soft or hard delete) a product record.
+      parameters:
+        - in: path
+          name: product_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '204':
+          description: Product successfully deleted.
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Retrieve all users
+      description: Retrieve all users with optional filtering.
+      responses:
+        '200':
+          description: A list of users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+    post:
+      tags:
+        - Users
+      summary: Create new user
+      description: 'Create new user with username, password, role, email, profile_pic_blob.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '201':
+          description: User successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+  /users/auth/login:
+    post:
+      tags:
+        - Users
+        - Authentication
+      summary: User login and credential validation
+      description: Validate credentials and return user data (no JWT token).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+              required:
+                - username
+                - password
+      responses:
+        '200':
+          description: 'Login successful, returns user data.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials.
+  '/users/{user_id}':
+    get:
+      tags:
+        - Users
+      summary: Get single user details
+      description: Get single user details including profile_pic_blob (base64 encoded).
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: User details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      tags:
+        - Users
+      summary: Update user details
+      description: Full replacement update of user details.
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '200':
+          description: User successfully updated.
+    delete:
+      tags:
+        - Users
+      summary: Delete user
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '204':
+          description: User successfully deleted.
+  '/users/{user_id}/toggle-active':
+    patch:
+      tags:
+        - Users
+      summary: Toggle user active status
+      description: Toggles the boolean is_active status for a user.
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: User status successfully toggled.
+  /categories:
+    get:
+      tags:
+        - Categories
+      summary: Get all categories
+      responses:
+        '200':
+          description: A list of categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+    post:
+      tags:
+        - Categories
+      summary: Add new category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '201':
+          description: Category successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+  '/categories/{category_id}':
+    get:
+      tags:
+        - Categories
+      summary: Get single category details
+      parameters:
+        - in: path
+          name: category_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: Category details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+    put:
+      tags:
+        - Categories
+      summary: Update category
+      description: Full replacement update of a category.
+      parameters:
+        - in: path
+          name: category_id
+          schema:
+            type: integer
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '200':
+          description: Category successfully updated.
+    delete:
+      tags:
+        - Categories
+      summary: Delete category
+      parameters:
+        - in: path
+          name: category_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '204':
+          description: Category successfully deleted.
+  /sales:
+    post:
+      tags:
+        - Sales
+        - Atomic Transactions
+      summary: Record an atomic sales transaction
+      description: >-
+        Creates a SALES record, updates PRODUCTS stock, updates RETAILER_METRICS
+        (streak, daily_quota_usd).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInput'
+      responses:
+        '201':
+          description: Sale successfully recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+    get:
+      tags:
+        - Sales
+      summary: Get all sales records
+      description: Retrieves all sales with optional date range filtering.
+      parameters:
+        - in: query
+          name: start_date
+          schema:
+            type: string
+            format: date
+          description: ISO format start date for filtering.
+        - in: query
+          name: end_date
+          schema:
+            type: string
+            format: date
+          description: ISO format end date for filtering.
+      responses:
+        '200':
+          description: A list of sales.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sale'
+  '/sales/{sale_id}':
+    get:
+      tags:
+        - Sales
+      summary: Get single sale details
+      parameters:
+        - in: path
+          name: sale_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: Sale details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+    delete:
+      tags:
+        - Sales
+      summary: Undo/delete sale
+      description: Deletes the sale record and reverses the stock changes.
+      parameters:
+        - in: path
+          name: sale_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '204':
+          description: Sale successfully undone and stock restored.
+  /log/dispose:
+    post:
+      tags:
+        - Product Logs
+        - Atomic Transactions
+      summary: Record manager product disposal action
+      description: >-
+        Atomic transaction to update PRODUCTS stock and create a PRODUCT_LOG
+        entry for disposal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                product_id:
+                  type: integer
+                quantity:
+                  type: integer
+                reason:
+                  type: string
+                manager_id:
+                  type: integer
+              required:
+                - product_id
+                - quantity
+                - reason
+                - manager_id
+      responses:
+        '201':
+          description: Disposal logged successfully.
+  '/log/product/{product_id}':
+    get:
+      tags:
+        - Product Logs
+      summary: Get audit history for specific product
+      parameters:
+        - in: path
+          name: product_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: A list of product log entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductLogEntry'
+  '/log/user/{user_id}':
+    get:
+      tags:
+        - Product Logs
+      summary: Get all product-related actions performed by specific user
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: A list of product log entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductLogEntry'
+  /reports/sales/time:
+    get:
+      tags:
+        - Reporting
+      summary: Sales data grouped by time period for charts
+      parameters:
+        - in: query
+          name: grouping
+          schema:
+            type: string
+            enum:
+              - day
+              - week
+              - month
+          required: true
+          description: Time period to group sales data by.
+      responses:
+        '200':
+          description: Sales data grouped by time.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesTimeReport'
+  /reports/sales/summary:
+    get:
+      tags:
+        - Reporting
+      summary: Aggregated sales KPIs
+      description: 'Returns Total Revenue, Total Sales Count, Total Transactions.'
+      responses:
+        '200':
+          description: Sales summary KPIs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesSummaryReport'
+  /reports/categories:
+    get:
+      tags:
+        - Reporting
+      summary: Product counts per category for pie chart
+      responses:
+        '200':
+          description: Category product counts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryCount'
+  /alerts/low-stock:
+    get:
+      tags:
+        - Alerts
+      summary: Get products below minimum stock level
+      description: Get products where stock < min_stock_level.
+      responses:
+        '200':
+          description: A list of low stock items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LowStockItem'
+  /alerts/expiring:
+    get:
+      tags:
+        - Alerts
+      summary: Get products expiring soon
+      description: Get products expiring within 7 days (configurable threshold).
+      responses:
+        '200':
+          description: A list of expiring products.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExpiringItem'
+  '/retailer/metrics/{user_id}':
+    get:
+      tags:
+        - Gamification
+      summary: Get retailer's current metrics
+      description: >-
+        Get retailer's current_streak and daily_quota_usd (today's accumulated
+        sales).
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: Retailer metrics data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailerMetric'
+  '/retailer/metrics/{user_id}/reset-streak':
+    post:
+      tags:
+        - Gamification
+      summary: Reset retailer streak
+      description: Reset streak (admin/manager only).
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: Streak successfully reset.
+  /retailer/leaderboard:
+    get:
+      tags:
+        - Gamification
+      summary: Get top retailers by daily quota or streak
+      parameters:
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum:
+              - daily_quota_usd
+              - current_streak
+          required: true
+      responses:
+        '200':
+          description: Leaderboard ranking.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetailerLeaderboardEntry'
+  /dashboard/admin:
+    get:
+      tags:
+        - Dashboards
+      summary: Admin dashboard metrics
+      description: 'Returns total users, products, sales counts.'
+      responses:
+        '200':
+          description: Admin metrics data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboard'
+  /dashboard/manager:
+    get:
+      tags:
+        - Dashboards
+      summary: Manager dashboard metrics
+      description: 'Returns low stock count, expiring items count, recent logs.'
+      responses:
+        '200':
+          description: Manager metrics data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagerDashboard'
+  '/dashboard/retailer/{user_id}':
+    get:
+      tags:
+        - Dashboards
+      summary: Retailer dashboard metrics
+      description: 'Returns available products, personal sales stats, streak.'
+      parameters:
+        - in: path
+          name: user_id
+          schema:
+            type: integer
+          required: true
+      responses:
+        '200':
+          description: Retailer metrics data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailerDashboard'
+  /admin/log/desktop:
+    post:
+      tags:
+        - Admin
+        - Activity Logs
+      summary: Log desktop app user actions
+      description: 'Log desktop app user actions (user_id, action, target, details).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                action:
+                  type: string
+                target:
+                  type: string
+                details:
+                  type: object
+              required:
+                - user_id
+                - action
+      responses:
+        '201':
+          description: Activity logged successfully.
+  /admin/activity_logs:
+    get:
+      tags:
+        - Admin
+        - Activity Logs
+      summary: Query activity logs
+      description: 'Query logs with filters (method, source, target, date range, user_id).'
+      parameters:
+        - in: query
+          name: user_id
+          schema:
+            type: integer
+        - in: query
+          name: action
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of activity log entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActivityLogEntry'
+  /admin/activity_logs/summary:
+    get:
+      tags:
+        - Admin
+        - Activity Logs
+      summary: Activity log statistics
+      description: 'Returns log statistics (total logs, by method, by source, by entity).'
+      responses:
+        '200':
+          description: Log summary statistics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityLogSummary'
+  /mfa/send:
+    post:
+      tags:
+        - Authentication
+        - MFA
+      summary: Send MFA verification code
+      description: Send MFA verification code to user's email (Admin/Manager roles).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                email:
+                  type: string
+              required:
+                - user_id
+                - email
+      responses:
+        '200':
+          description: Verification code sent successfully.
+  /mfa/verify:
+    post:
+      tags:
+        - Authentication
+        - MFA
+      summary: Verify entered MFA code
+      description: Verify entered MFA code against stored code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                code:
+                  type: string
+              required:
+                - user_id
+                - code
+      responses:
+        '200':
+          description: MFA code verified successfully.
+        '401':
+          description: Invalid or expired code.
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+        role:
+          type: string
+          enum:
+            - Admin
+            - Manager
+            - Retailer
+        is_active:
+          type: boolean
+        profile_pic_blob:
+          type: string
+          description: Base64 encoded image blob for profile picture.
+    UserInput:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        role:
+          type: string
+          enum:
+            - Admin
+            - Manager
+            - Retailer
+        email:
+          type: string
+          nullable: true
+        profile_pic_blob:
+          type: string
+          nullable: true
+          description: Base64 encoded image blob for profile picture.
+      required:
+        - username
+        - role
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+      required:
+        - name
+    CategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+      required:
+        - name
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        category_id:
+          type: integer
+        brand:
+          type: string
+        price:
+          type: number
+          format: float
+        stock:
+          type: integer
+        image_blob:
+          type: string
+          nullable: true
+          description: Base64 encoded image blob for the product.
+        expiration_date:
+          type: string
+          format: date
+          nullable: true
+        min_stock_level:
+          type: integer
+      required:
+        - name
+        - category_id
+        - price
+        - stock
+    ProductInput:
+      type: object
+      properties:
+        name:
+          type: string
+        category_id:
+          type: integer
+        brand:
+          type: string
+        price:
+          type: number
+          format: float
+        stock:
+          type: integer
+        image_blob:
+          type: string
+          nullable: true
+          description: Base64 encoded image blob for the product.
+        expiration_date:
+          type: string
+          format: date
+          nullable: true
+        min_stock_level:
+          type: integer
+      required:
+        - name
+        - category_id
+        - price
+        - stock
+        - min_stock_level
+    LowStockItem:
+      type: object
+      properties:
+        product_id:
+          type: integer
+        name:
+          type: string
+        current_quantity:
+          type: integer
+        min_level:
+          type: integer
+    ExpiringItem:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Product'
+      properties:
+        days_until_expiry:
+          type: integer
+          description: Number of days until the product expires.
+    Sale:
+      type: object
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        retailer_id:
+          type: integer
+        quantity_sold:
+          type: integer
+        total_price:
+          type: number
+          format: float
+        sale_date:
+          type: string
+          format: date-time
+    SaleInput:
+      type: object
+      description: 'Data required to process a sale transaction, supporting multiple items.'
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id:
+                type: integer
+              quantity:
+                type: integer
+              unit_price:
+                type: number
+                format: float
+            required:
+              - product_id
+              - quantity
+              - unit_price
+        retailer_id:
+          type: integer
+      required:
+        - items
+        - retailer_id
+    ProductLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        user_id:
+          type: integer
+        action_type:
+          type: string
+          enum:
+            - SALE
+            - DISPOSAL
+            - STOCK_ADJUSTMENT
+            - CREATION
+        details:
+          type: object
+          description: 'JSON details about the action (e.g., quantity, reason).'
+        timestamp:
+          type: string
+          format: date-time
+    SalesTimeReport:
+      type: object
+      properties:
+        grouping:
+          type: string
+          enum:
+            - day
+            - week
+            - month
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              period:
+                type: string
+                description: Date (YYYY-MM-DD) or week/month identifier.
+              total_revenue:
+                type: number
+                format: float
+              total_count:
+                type: integer
+    SalesSummaryReport:
+      type: object
+      properties:
+        total_revenue:
+          type: number
+          format: float
+        total_sales_count:
+          type: integer
+        total_transactions:
+          type: integer
+    CategoryCount:
+      type: object
+      properties:
+        category_name:
+          type: string
+        product_count:
+          type: integer
+    RetailerMetric:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        current_streak:
+          type: integer
+        daily_quota_usd:
+          type: number
+          format: float
+          description: Accumulated sales value for today.
+    RetailerLeaderboardEntry:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        score:
+          type: number
+          format: float
+          description: The metric used for ranking (daily_quota_usd or current_streak).
+    AdminDashboard:
+      type: object
+      properties:
+        total_users:
+          type: integer
+        total_products:
+          type: integer
+        total_sales_count:
+          type: integer
+    ManagerDashboard:
+      type: object
+      properties:
+        low_stock_count:
+          type: integer
+        expiring_items_count:
+          type: integer
+        recent_logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductLogEntry'
+    RetailerDashboard:
+      type: object
+      properties:
+        available_products_count:
+          type: integer
+        personal_sales_stats:
+          type: object
+          description: 'Breakdown of personal sales (e.g., today, this week).'
+        current_streak:
+          type: integer
+    ActivityLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        user_id:
+          type: integer
+        action:
+          type: string
+        target:
+          type: string
+        details:
+          type: object
+          description: Additional contextual JSON data.
+    ActivityLogSummary:
+      type: object
+      properties:
+        total_logs:
+          type: integer
+        logs_by_method:
+          type: object
+          description: 'Count of logs grouped by action type (e.g., PRODUCT_CREATE).'
+        logs_by_source:
+          type: object
+          description: 'Count of logs grouped by source (e.g., desktop, API).'
