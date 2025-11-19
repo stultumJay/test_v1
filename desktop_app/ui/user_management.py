@@ -2,10 +2,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                              QMessageBox, QDialog, QFormLayout, QComboBox, QCheckBox, QToolButton)
 from PyQt6.QtCore import Qt, QSize
-from utils.helpers import get_feather_icon
 from utils.config import AppConfig
 from utils.decorators import role_required
-from utils.styles import get_global_stylesheet, apply_table_styles, get_dialog_style
+from utils.style_utils import get_global_stylesheet, apply_table_styles, get_dialog_style
 
 # NOTE: The local UserManager and ActivityLogger imports are removed.
 # This class now expects an API client object for user operations.
